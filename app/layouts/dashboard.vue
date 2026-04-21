@@ -35,9 +35,8 @@ watch(route, () => { mobileMenuOpen.value = false })
           v-for="item in navigation"
           :key="item.to"
           :to="item.to"
-          class="flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-colors"
-          active-class="bg-primary-500/10 text-[#0A1520] font-semibold"
-          inactive-class="text-[#2D3E4A] hover:bg-black/[0.04]"
+          class="flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-colors text-[#0A1520] hover:bg-black/[0.04]"
+          active-class="!bg-primary-500/10 font-semibold"
         >
           <UIcon :name="item.icon" class="size-[18px]" />
           {{ item.label }}
@@ -54,7 +53,7 @@ watch(route, () => { mobileMenuOpen.value = false })
           </div>
           <button
             type="button"
-            class="shrink-0 p-1.5 rounded-md text-[#2D3E4A] hover:bg-black/[0.04]"
+            class="shrink-0 p-1.5 rounded-md text-[#0A1520] hover:bg-black/[0.04]"
             aria-label="Uitloggen"
             @click="logout"
           >
@@ -85,7 +84,7 @@ watch(route, () => { mobileMenuOpen.value = false })
         <template v-for="item in bottomNav" :key="item.label">
           <button
             v-if="item.action === 'menu'"
-            class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors text-[#2D3E4A]"
+            class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors text-[#0A1520]"
             @click="mobileMenuOpen = !mobileMenuOpen"
           >
             <UIcon :name="item.icon" class="size-6" />
@@ -94,9 +93,8 @@ watch(route, () => { mobileMenuOpen.value = false })
           <NuxtLink
             v-else
             :to="item.to"
-            class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors"
-            active-class="text-primary-500"
-            inactive-class="text-[#2D3E4A]"
+            class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors text-[#0A1520]"
+            active-class="!text-primary-500"
           >
             <UIcon :name="item.icon" class="size-6" />
             <span class="text-[10px] font-medium">{{ item.label }}</span>
@@ -123,9 +121,8 @@ watch(route, () => { mobileMenuOpen.value = false })
               v-for="item in navigation"
               :key="item.to"
               :to="item.to"
-              class="flex items-center gap-3 px-4 py-3.5 rounded-[12px] text-[15px] font-medium transition-colors"
-              active-class="bg-primary-500/10 text-[#0A1520] font-semibold"
-              inactive-class="text-[#2D3E4A]"
+              class="flex items-center gap-3 px-4 py-3.5 rounded-[12px] text-[15px] font-medium transition-colors text-[#0A1520]"
+              active-class="!bg-primary-500/10 font-semibold"
               @click="mobileMenuOpen = false"
             >
               <UIcon :name="item.icon" class="size-5" />
@@ -142,7 +139,7 @@ watch(route, () => { mobileMenuOpen.value = false })
             </div>
             <button
               type="button"
-              class="px-3 py-2 rounded-[10px] text-[13px] font-medium text-[#2D3E4A] hover:bg-black/[0.04] inline-flex items-center gap-1.5"
+              class="px-3 py-2 rounded-[10px] text-[13px] font-medium text-[#0A1520] hover:bg-black/[0.04] inline-flex items-center gap-1.5"
               @click="logout"
             >
               <UIcon name="i-lucide-log-out" class="size-4" />
