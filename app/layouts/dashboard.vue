@@ -36,7 +36,7 @@ watch(route, () => { mobileMenuOpen.value = false })
           :to="item.to"
           class="flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-colors"
           active-class="bg-primary-500/10 text-[#0A1520] font-semibold"
-          inactive-class="text-[#5A6A78] hover:bg-black/[0.04]"
+          inactive-class="text-[#2D3E4A] hover:bg-black/[0.04]"
         >
           <UIcon :name="item.icon" class="size-[18px]" />
           {{ item.label }}
@@ -116,7 +116,7 @@ watch(route, () => { mobileMenuOpen.value = false })
               :to="item.to"
               class="flex items-center gap-3 px-4 py-3.5 rounded-[12px] text-[15px] font-medium transition-colors"
               active-class="bg-primary-500/10 text-[#0A1520] font-semibold"
-              inactive-class="text-[#5A6A78]"
+              inactive-class="text-[#2D3E4A]"
               @click="mobileMenuOpen = false"
             >
               <UIcon :name="item.icon" class="size-5" />
