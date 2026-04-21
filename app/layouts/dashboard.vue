@@ -76,7 +76,7 @@ watch(route, () => { mobileMenuOpen.value = false })
         <template v-for="item in bottomNav" :key="item.label">
           <button
             v-if="item.action === 'menu'"
-            class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors text-[#5A6A78]"
+            class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors text-[#2D3E4A]"
             @click="mobileMenuOpen = !mobileMenuOpen"
           >
             <UIcon :name="item.icon" class="size-6" />
@@ -87,7 +87,7 @@ watch(route, () => { mobileMenuOpen.value = false })
             :to="item.to"
             class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors"
             active-class="text-primary-500"
-            inactive-class="text-[#5A6A78]"
+            inactive-class="text-[#2D3E4A]"
           >
             <UIcon :name="item.icon" class="size-6" />
             <span class="text-[10px] font-medium">{{ item.label }}</span>
