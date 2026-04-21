@@ -1,0 +1,49 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/* MapLibre marker z-index fix */
+.maplibregl-marker {
+  z-index: 10 !important;
+}
+.maplibregl-marker:hover {
+  z-index: 20 !important;
+}
+
+@theme static {
+  /* Nautar — Tide Design System */
+
+  /* Typography */
+  --font-sans: 'Manrope', 'Inter', -apple-system, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Primary: Aqua/Teal */
+  --color-primary-50: #EFFCFC;
+  --color-primary-100: #D6F7F6;
+  --color-primary-200: #B1EFED;
+  --color-primary-300: #7CE3E0;
+  --color-primary-400: #3CCFCC;
+  --color-primary-500: #00A9A5;
+  --color-primary-600: #0A918E;
+  --color-primary-700: #107472;
+  --color-primary-800: #145C5B;
+  --color-primary-900: #154D4C;
+  --color-primary-950: #052E2E;
+
+  /* Neutral: Grafiet */
+  --color-neutral-50: #F4F7F8;
+  --color-neutral-100: #E8EEF0;
+  --color-neutral-200: #D4DDE1;
+  --color-neutral-300: #B3C1C8;
+  --color-neutral-400: #8B9DA8;
+  --color-neutral-500: #5A6A78;
+  --color-neutral-600: #4D5B67;
+  --color-neutral-700: #414D57;
+  --color-neutral-800: #3A434B;
+  --color-neutral-900: #1F2E3C;
+  --color-neutral-950: #0A1520;
+
+  /* Semantic colors */
+  --color-success-500: #10B981;
+  --color-warning-500: #F59E0B;
+  --color-error-500: #EF4444;
+}

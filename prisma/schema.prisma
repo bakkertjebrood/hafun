@@ -1,0 +1,246 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────
+// Multi-tenancy: every table has marinaId
+// ──────────────────────────────────────────
+
+model Marina {
+  id               String   @id @default(uuid())
+  name             String
+  slug             String   @unique
+  settings         Json?
+  subscriptionPlan String?
+  gpsLat           Float?
+  gpsLng           Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  users     User[]
+  berths    Berth[]
+  customers Customer[]
+  boats     Boat[]
+  bookings  Booking[]
+  guests    Guest[]
+  invoices  Invoice[]
+  notes     Note[]
+}
+
+enum Role {
+  ADMIN
+  HARBORMASTER
+  STAFF
+  PORTAL
+}
+
+model User {
+  id           String   @id @default(uuid())
+  marinaId     String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(STAFF)
+  firstName    String?
+  lastName     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  marina   Marina @relation(fields: [marinaId], references: [id])
+  notes    Note[]
+  customer Customer?
+
+  @@index([marinaId])
+}
+
+enum BerthStatus {
+  FREE
+  OCCUPIED
+  TEMPORARY
+  STORAGE
+  SEASONAL
+  EMPTY
+  RELOCATED
+}
+
+model Berth {
+  id         String      @id @default(uuid())
+  marinaId   String
+  code       String
+  pier       String
+  length     Float
+  width      Float
+  status     BerthStatus @default(FREE)
+  gpsLat     Float?
+  gpsLng     Float?
+  customerId String?
+  boatId     String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  marina   Marina    @relation(fields: [marinaId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+  boat     Boat?     @relation(fields: [boatId], references: [id])
+  notes    Note[]
+  bookings Booking[]
+
+  @@index([marinaId])
+  @@index([marinaId, pier])
+}
+
+enum ContractType {
+  YEAR
+  SUMMER
+  TEMPORARY
+}
+
+model Customer {
+  id           String       @id @default(uuid())
+  marinaId     String
+  name         String
+  email        String?
+  phone        String?
+  address      String?
+  contractType ContractType @default(YEAR)
+  portalUserId String?      @unique
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  marina     Marina    @relation(fields: [marinaId], references: [id])
+  portalUser User?     @relation(fields: [portalUserId], references: [id])
+  boats      Boat[]
+  berths     Berth[]
+  bookings   Booking[]
+  invoices   Invoice[]
+
+  @@index([marinaId])
+}
+
+model Boat {
+  id           String   @id @default(uuid())
+  marinaId     String
+  customerId   String?
+  name         String
+  type         String?
+  length       Float
+  width        Float?
+  registration String?
+  photo        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  marina   Marina    @relation(fields: [marinaId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+  berths   Berth[]
+  bookings Booking[]
+
+  @@index([marinaId])
+}
+
+model Booking {
+  id         String   @id @default(uuid())
+  marinaId   String
+  berthId    String
+  customerId String?
+  guestId    String?
+  boatId     String?
+  dateFrom   DateTime
+  dateTo     DateTime
+  status     String   @default("reserved")
+  persons    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  marina   Marina    @relation(fields: [marinaId], references: [id])
+  berth    Berth     @relation(fields: [berthId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+  guest    Guest?    @relation(fields: [guestId], references: [id])
+  boat     Boat?     @relation(fields: [boatId], references: [id])
+
+  @@index([marinaId])
+  @@index([marinaId, berthId])
+}
+
+model Guest {
+  id         String    @id @default(uuid())
+  marinaId   String
+  name       String
+  boatName   String?
+  boatLength Float?
+  arrival    DateTime
+  departure  DateTime?
+  persons    Int       @default(1)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  marina   Marina    @relation(fields: [marinaId], references: [id])
+  bookings Booking[]
+
+  @@index([marinaId])
+}
+
+model Invoice {
+  id         String        @id @default(uuid())
+  marinaId   String
+  customerId String?
+  guestId    String?
+  number     String        @unique
+  date       DateTime
+  dueDate    DateTime
+  total      Float
+  vat        Float
+  status     String        @default("open")
+  paidAmount Float         @default(0)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  marina   Marina        @relation(fields: [marinaId], references: [id])
+  customer Customer?     @relation(fields: [customerId], references: [id])
+  lines    InvoiceLine[]
+  payments Payment[]
+
+  @@index([marinaId])
+}
+
+model InvoiceLine {
+  id          String @id @default(uuid())
+  invoiceId   String
+  description String
+  quantity    Float  @default(1)
+  unitPrice   Float
+  vatRate     Float  @default(21)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id        String   @id @default(uuid())
+  invoiceId String
+  amount    Float
+  method    String   @default("transfer")
+  date      DateTime @default(now())
+  note      String?
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model Note {
+  id         String   @id @default(uuid())
+  marinaId   String
+  berthId    String?
+  customerId String?
+  text       String
+  authorId   String
+  createdAt  DateTime @default(now())
+
+  marina Marina @relation(fields: [marinaId], references: [id])
+  berth  Berth? @relation(fields: [berthId], references: [id])
+  author User   @relation(fields: [authorId], references: [id])
+
+  @@index([marinaId])
+  @@index([berthId])
+}
