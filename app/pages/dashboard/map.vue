@@ -23,8 +23,10 @@ const drawPoints = ref<number[][]>([])
 const drawHeadPoints = ref<number[][]>([])
 const drawnPiers = ref<any[]>([])
 const pierLayers: any[] = []
+const vertexHandles: any[] = []
 let drawPolyline: any = null
 let drawHeadPolyline: any = null
+let drawPreviewLine: any = null
 
 const statusColors: Record<string, string> = {
   FREE: '#10B981', OCCUPIED: '#EF4444', SEASONAL: '#F59E0B',
@@ -52,8 +54,37 @@ onMounted(async () => {
   await nextTick()
   initMap()
   await loadPiers()
+  fitToData()
   loading.value = false
+
+  if (import.meta.client) {
+    window.addEventListener('keydown', onKeyDown)
+  }
 })
+
+onBeforeUnmount(() => {
+  if (import.meta.client) {
+    window.removeEventListener('keydown', onKeyDown)
+  }
+})
+
+function onKeyDown(e: KeyboardEvent) {
+  if (drawMode.value === 'off') return
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    cancelDraw()
+    return
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    if (drawMode.value === 'main') goToHead()
+    return
+  }
+  if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault()
+    undoLastPoint()
+  }
+}
 
 async function refreshMapData() {
   if (!marinaId.value) return
@@ -84,11 +115,31 @@ function initMap() {
   labels.addTo(mapInstance)
   L.control.layers({ 'Satelliet': satellite, 'Kaart': street }, { 'Labels': labels }, { position: 'topright' }).addTo(mapInstance)
 
-  // Map click handler for pier drawing
   mapInstance.on('click', onMapClick)
   mapInstance.on('dblclick', onMapDblClick)
+  mapInstance.on('mousemove', onMapMouseMove)
 
   addBerthMarkers()
+}
+
+function onMapMouseMove(e: any) {
+  if (drawMode.value === 'off') {
+    if (drawPreviewLine) { drawPreviewLine.remove(); drawPreviewLine = null }
+    return
+  }
+  const cursor: [number, number] = [e.latlng.lat, e.latlng.lng]
+  let preview: number[][] | null = null
+  if (drawMode.value === 'main' && drawPoints.value.length >= 1) {
+    preview = [drawPoints.value[drawPoints.value.length - 1]!, cursor]
+  }
+  else if (drawMode.value === 'head' && drawHeadPoints.value.length === 1) {
+    preview = [drawHeadPoints.value[0]!, cursor]
+  }
+  if (drawPreviewLine) { drawPreviewLine.remove(); drawPreviewLine = null }
+  if (preview) {
+    const color = drawMode.value === 'head' ? '#F59E0B' : '#00A9A5'
+    drawPreviewLine = L.polyline(preview, { color, weight: 2, opacity: 0.55, dashArray: '4, 6', interactive: false }).addTo(mapInstance)
+  }
 }
 
 // ─── PIER DRAWING ───────────────────────────────
@@ -100,7 +151,6 @@ async function loadPiers() {
 }
 
 function renderPierLines() {
-  // Clear existing pier lines
   pierLayers.forEach(l => l.remove())
   pierLayers.length = 0
   if (!mapInstance || !L) return
@@ -109,12 +159,10 @@ function renderPierLines() {
     const points = pier.points as number[][]
     if (points.length < 2) continue
 
-    // Main line
     const line = L.polyline(points, {
       color: '#00A9A5', weight: 4, opacity: 0.8, dashArray: '8, 6'
     }).addTo(mapInstance)
 
-    // Label at start
     const labelIcon = L.divIcon({
       className: 'pier-label',
       html: `<div style="
@@ -128,7 +176,6 @@ function renderPierLines() {
 
     pierLayers.push(line, label)
 
-    // T-head line
     const headPoints = pier.headPoints as number[][] | null
     if (headPoints && headPoints.length >= 2) {
       const headLine = L.polyline(headPoints, {
@@ -148,6 +195,104 @@ function renderPierLines() {
       pierLayers.push(headLine, hl)
     }
   }
+
+  renderVertexHandles()
+}
+
+// ─── VERTEX EDITING ─────────────────────────────
+
+function clearVertexHandles() {
+  vertexHandles.forEach(h => h.remove())
+  vertexHandles.length = 0
+}
+
+function renderVertexHandles() {
+  clearVertexHandles()
+  if (!editMode.value || drawMode.value !== 'off') return
+  if (!mapInstance || !L) return
+
+  for (const pier of drawnPiers.value) {
+    const points = pier.points as number[][]
+    points.forEach((pt, idx) => {
+      vertexHandles.push(createVertexHandle(pt, pier, 'main', idx))
+    })
+    const headPoints = pier.headPoints as number[][] | null
+    if (headPoints) {
+      headPoints.forEach((pt, idx) => {
+        vertexHandles.push(createVertexHandle(pt, pier, 'head', idx))
+      })
+    }
+  }
+}
+
+function createVertexHandle(point: number[], pier: any, kind: 'main' | 'head', idx: number) {
+  const color = kind === 'main' ? '#00A9A5' : '#F59E0B'
+  const icon = L.divIcon({
+    className: 'pier-vertex',
+    html: `<div style="
+      width: 16px; height: 16px; background: white;
+      border: 3px solid ${color}; border-radius: 50%;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+      cursor: grab;
+    "></div>`,
+    iconSize: [16, 16],
+    iconAnchor: [8, 8]
+  })
+  const marker = L.marker(point, { icon, draggable: true, zIndexOffset: 1000 }).addTo(mapInstance)
+
+  marker.on('drag', (e: any) => {
+    const pos = e.target.getLatLng()
+    if (kind === 'main') pier.points[idx] = [pos.lat, pos.lng]
+    else if (pier.headPoints) pier.headPoints[idx] = [pos.lat, pos.lng]
+    // Redraw only the pier lines without destroying handles
+    redrawPierLinesOnly()
+  })
+
+  marker.on('dragend', async (e: any) => {
+    const pos = e.target.getLatLng()
+    if (kind === 'main') pier.points[idx] = [pos.lat, pos.lng]
+    else if (pier.headPoints) pier.headPoints[idx] = [pos.lat, pos.lng]
+    try {
+      await $fetch(`/api/piers/${pier.id}`, {
+        method: 'PUT',
+        body: { points: pier.points, headPoints: pier.headPoints }
+      })
+      await $fetch('/api/piers/position-berths', {
+        method: 'POST',
+        body: { marinaId: marinaId.value, pierNames: [pier.name], onlyUnpositioned: false }
+      })
+      await refreshMapData()
+      clearMarkers()
+      addBerthMarkers()
+    }
+    catch (err) {
+      console.error('Vertex update failed:', err)
+    }
+  })
+
+  return marker
+}
+
+function redrawPierLinesOnly() {
+  pierLayers.forEach(l => l.remove())
+  pierLayers.length = 0
+  if (!mapInstance || !L) return
+
+  for (const pier of drawnPiers.value) {
+    const points = pier.points as number[][]
+    if (points.length < 2) continue
+    const line = L.polyline(points, {
+      color: '#00A9A5', weight: 4, opacity: 0.8, dashArray: '8, 6'
+    }).addTo(mapInstance)
+    pierLayers.push(line)
+    const headPoints = pier.headPoints as number[][] | null
+    if (headPoints && headPoints.length >= 2) {
+      const headLine = L.polyline(headPoints, {
+        color: '#F59E0B', weight: 4, opacity: 0.8, dashArray: '8, 6'
+      }).addTo(mapInstance)
+      pierLayers.push(headLine)
+    }
+  }
 }
 
 function startDrawPier(name: string) {
@@ -156,9 +301,8 @@ function startDrawPier(name: string) {
   drawHeadPoints.value = []
   drawMode.value = 'main'
   mapInstance.getContainer().style.cursor = 'crosshair'
-
-  // Disable double-click zoom during drawing
   mapInstance.doubleClickZoom.disable()
+  clearVertexHandles()
 }
 
 function onMapClick(e: any) {
@@ -183,10 +327,22 @@ function onMapClick(e: any) {
 function onMapDblClick(e: any) {
   if (drawMode.value !== 'main') return
   e.originalEvent.preventDefault()
+  goToHead()
+}
 
-  if (drawPoints.value.length >= 2) {
-    // Ask: add T-head?
-    drawMode.value = 'head'
+function goToHead() {
+  if (drawMode.value !== 'main' || drawPoints.value.length < 2) return
+  drawMode.value = 'head'
+  updateDrawPreview()
+}
+
+function undoLastPoint() {
+  if (drawMode.value === 'main' && drawPoints.value.length > 0) {
+    drawPoints.value = drawPoints.value.slice(0, -1)
+    updateDrawPreview()
+  }
+  else if (drawMode.value === 'head' && drawHeadPoints.value.length > 0) {
+    drawHeadPoints.value = drawHeadPoints.value.slice(0, -1)
     updateDrawPreview()
   }
 }
@@ -214,12 +370,13 @@ function updateDrawPreview() {
 
 async function finishDrawPier() {
   if (drawPoints.value.length < 2) return
+  const pierName = drawPierName.value
 
   await $fetch('/api/piers', {
     method: 'POST',
     body: {
       marinaId: marinaId.value,
-      name: drawPierName.value,
+      name: pierName,
       points: drawPoints.value,
       headPoints: drawHeadPoints.value.length >= 2 ? drawHeadPoints.value : null
     }
@@ -227,6 +384,24 @@ async function finishDrawPier() {
 
   cancelDraw()
   await loadPiers()
+
+  // Auto-position berths that still lack coords on this freshly-drawn pier
+  try {
+    await $fetch('/api/piers/position-berths', {
+      method: 'POST',
+      body: {
+        marinaId: marinaId.value,
+        pierNames: [pierName],
+        onlyUnpositioned: true
+      }
+    })
+    await refreshMapData()
+    clearMarkers()
+    addBerthMarkers()
+  }
+  catch (err) {
+    console.error('Auto-position after draw failed:', err)
+  }
 }
 
 function skipHead() {
@@ -240,8 +415,10 @@ function cancelDraw() {
   drawHeadPoints.value = []
   if (drawPolyline) { drawPolyline.remove(); drawPolyline = null }
   if (drawHeadPolyline) { drawHeadPolyline.remove(); drawHeadPolyline = null }
+  if (drawPreviewLine) { drawPreviewLine.remove(); drawPreviewLine = null }
   mapInstance?.getContainer()?.style.setProperty('cursor', '')
   mapInstance?.doubleClickZoom.enable()
+  renderVertexHandles()
 }
 
 async function deletePier(id: string) {
@@ -287,33 +464,11 @@ function addBerthMarkers() {
   if (!mapInstance || !L || !mapData.value?.berths) return
   clearMarkers()
 
-  const center = {
-    lat: mapData.value.marina?.gpsLat || 52.58038836,
-    lng: mapData.value.marina?.gpsLng || 5.75972931
-  }
-
-  const pierList = [...new Set(mapData.value.berths.map((b: any) => b.pier))].sort()
-  const pierConfig: Record<string, { baseLng: number; baseLat: number }> = {}
-  pierList.forEach((pier: string, idx: number) => {
-    pierConfig[pier] = {
-      baseLng: center.lng + 0.0012 - idx * 0.0008,
-      baseLat: center.lat + 0.0008
-    }
-  })
-
   for (const berth of mapData.value.berths) {
-    let lat: number, lng: number
-    if (berth.gpsLat && berth.gpsLng) {
-      lat = berth.gpsLat
-      lng = berth.gpsLng
-    } else {
-      const config = pierConfig[berth.pier]
-      if (!config) continue
-      const berthsInPier = mapData.value.berths.filter((b: any) => b.pier === berth.pier)
-      const idx = berthsInPier.indexOf(berth)
-      lat = config.baseLat - idx * 0.00015
-      lng = config.baseLng
-    }
+    // Skip berths without coordinates — no more floating placeholder grid
+    if (berth.gpsLat == null || berth.gpsLng == null) continue
+    const lat = berth.gpsLat
+    const lng = berth.gpsLng
 
     const color = statusColors[berth.status] || '#9CA3AF'
     const isEdit = editMode.value
@@ -360,6 +515,27 @@ function toggleEditMode() {
   editMode.value = !editMode.value
   if (!editMode.value) cancelDraw()
   addBerthMarkers()
+  renderVertexHandles()
+}
+
+function fitToData() {
+  if (!mapInstance || !L) return
+  const layers: any[] = []
+  for (const pier of drawnPiers.value) {
+    const pts = pier.points as number[][]
+    if (pts?.length >= 2) layers.push(L.polyline(pts))
+    const hp = pier.headPoints as number[][] | null
+    if (hp && hp.length >= 2) layers.push(L.polyline(hp))
+  }
+  for (const berth of mapData.value?.berths || []) {
+    if (berth.gpsLat != null && berth.gpsLng != null) {
+      layers.push(L.marker([berth.gpsLat, berth.gpsLng]))
+    }
+  }
+  if (layers.length) {
+    const group = L.featureGroup(layers)
+    mapInstance.fitBounds(group.getBounds().pad(0.15), { maxZoom: 19 })
+  }
 }
 
 async function openBerth(id: string) {
@@ -382,14 +558,18 @@ async function onNoteAdded() {
 }
 
 const counts = computed(() => mapData.value?.counts || {})
-const pierNames = computed(() => {
+const pierNames = computed<string[]>(() => {
   if (!mapData.value?.berths) return []
-  return [...new Set(mapData.value.berths.map((b: any) => b.pier))].sort()
+  return [...new Set(mapData.value.berths.map((b: any) => b.pier as string))].sort()
 })
 const filteredBerths = computed(() => {
   if (!mapData.value?.berths) return []
   if (!activePier.value) return mapData.value.berths
   return mapData.value.berths.filter((b: any) => b.pier === activePier.value)
+})
+const unpositionedCount = computed(() => {
+  if (!mapData.value?.berths) return 0
+  return mapData.value.berths.filter((b: any) => b.gpsLat == null || b.gpsLng == null).length
 })
 </script>
 
@@ -442,26 +622,44 @@ const filteredBerths = computed(() => {
     <!-- Draw mode bar -->
     <div
       v-if="drawMode !== 'off'"
-      class="px-6 py-2.5 bg-primary-500 text-white flex items-center justify-between shrink-0"
+      class="px-3 lg:px-6 py-2.5 bg-primary-500 text-white flex items-center justify-between shrink-0 gap-2 flex-wrap"
     >
-      <div class="flex items-center gap-3">
-        <span class="text-sm font-semibold">
-          Teken Steiger {{ drawPierName }}
-          <span v-if="drawMode === 'main'">— Klik punten, dubbelklik om af te ronden</span>
-          <span v-if="drawMode === 'head'">— Klik 2 punten voor de T-kop (kopzijde)</span>
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="text-[13px] lg:text-sm font-semibold truncate">
+          Steiger {{ drawPierName }}
+          <span v-if="drawMode === 'main'" class="font-normal opacity-90">— klik punten ({{ drawPoints.length }})</span>
+          <span v-if="drawMode === 'head'" class="font-normal opacity-90">— klik 2 kop-punten ({{ drawHeadPoints.length }}/2)</span>
         </span>
-        <span class="text-xs opacity-75">({{ drawPoints.length }} punten)</span>
       </div>
-      <div class="flex gap-2">
+      <div class="flex gap-1.5 shrink-0">
+        <button
+          class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/15 hover:bg-white/25 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+          :disabled="drawMode === 'main' ? drawPoints.length === 0 : drawHeadPoints.length === 0"
+          title="Laatste punt ongedaan maken (Ctrl+Z)"
+          @click="undoLastPoint"
+        >
+          <UIcon name="i-lucide-undo-2" class="size-3.5" />
+          <span class="hidden sm:inline">Ongedaan</span>
+        </button>
+        <button
+          v-if="drawMode === 'main'"
+          class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white text-primary-600 hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed"
+          :disabled="drawPoints.length < 2"
+          title="Hoofdlijn afronden (Enter of dubbelklik)"
+          @click="goToHead"
+        >
+          Afronden
+        </button>
         <button
           v-if="drawMode === 'head'"
-          class="px-3 py-1 rounded-full text-xs font-semibold bg-white/20 hover:bg-white/30"
+          class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white text-primary-600 hover:bg-white/90"
           @click="skipHead"
         >
           Geen T-kop, opslaan
         </button>
         <button
-          class="px-3 py-1 rounded-full text-xs font-semibold bg-white/20 hover:bg-white/30"
+          class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/15 hover:bg-white/25"
+          title="Annuleren (Esc)"
           @click="cancelDraw"
         >
           Annuleer
@@ -493,7 +691,13 @@ const filteredBerths = computed(() => {
         <template v-if="editMode">
           <div class="px-4 py-3 border-b border-black/[0.08]">
             <div class="text-sm font-semibold text-[#0A1520]">Steigers tekenen</div>
-            <div class="text-[11px] text-[#5A6A78] mt-0.5">Teken lijnen op de kaart per steiger</div>
+            <div class="text-[11px] text-[#5A6A78] mt-0.5">Teken lijnen; sleep punten om te verplaatsen.</div>
+            <div
+              v-if="unpositionedCount > 0"
+              class="mt-2 text-[11px] text-[#B45309] bg-amber-500/10 border border-amber-500/20 rounded-md px-2 py-1.5"
+            >
+              {{ unpositionedCount }} ligplaats{{ unpositionedCount === 1 ? '' : 'en' }} nog niet op de kaart. Teken de bijbehorende steiger of klik "Plaats berths".
+            </div>
           </div>
 
           <!-- Draw pier buttons -->

@@ -58,13 +58,18 @@ function offsetPoint(lat: number, lng: number, bearing: number, distMeters: numb
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const marinaId = body.marinaId
+  const pierNames: string[] | undefined = Array.isArray(body.pierNames) ? body.pierNames : undefined
+  const onlyUnpositioned: boolean = !!body.onlyUnpositioned
 
   if (!marinaId) {
     throw createError({ statusCode: 400, message: 'marinaId is verplicht' })
   }
 
   const pierLines = await prisma.pierLine.findMany({
-    where: { marinaId },
+    where: {
+      marinaId,
+      ...(pierNames?.length ? { name: { in: pierNames } } : {})
+    },
     orderBy: { name: 'asc' }
   })
 
@@ -86,31 +91,31 @@ export default defineEventHandler(async (event) => {
 
     if (!pierBerths.length || points.length < 2) continue
 
-    // Separate berths that go on the main line vs the T-head
-    // Convention: berths with "KOP" in their code go on the head
     const headBerths = pierBerths.filter(b => b.code.toUpperCase().includes('KOP'))
     const mainBerths = pierBerths.filter(b => !b.code.toUpperCase().includes('KOP'))
 
-    // Position main berths along the main line
     for (let i = 0; i < mainBerths.length; i++) {
+      const berth = mainBerths[i]!
+      if (onlyUnpositioned && berth.gpsLat != null && berth.gpsLng != null) continue
       const t = mainBerths.length > 1 ? i / (mainBerths.length - 1) : 0.5
       const [lat, lng] = interpolatePolyline(points, t)
 
       await prisma.berth.update({
-        where: { id: mainBerths[i].id },
+        where: { id: berth.id },
         data: { gpsLat: lat, gpsLng: lng }
       })
       positioned++
     }
 
-    // Position head berths along the T-head line (if drawn)
     if (headPoints && headPoints.length >= 2 && headBerths.length > 0) {
       for (let i = 0; i < headBerths.length; i++) {
+        const berth = headBerths[i]!
+        if (onlyUnpositioned && berth.gpsLat != null && berth.gpsLng != null) continue
         const t = headBerths.length > 1 ? i / (headBerths.length - 1) : 0.5
         const [lat, lng] = interpolatePolyline(headPoints, t)
 
         await prisma.berth.update({
-          where: { id: headBerths[i].id },
+          where: { id: berth.id },
           data: { gpsLat: lat, gpsLng: lng }
         })
         positioned++
