@@ -3,6 +3,12 @@ definePageMeta({
   layout: 'dashboard'
 })
 
+const { user } = useAuthUser()
+const greeting = computed(() => {
+  const name = user.value?.firstName || user.value?.email?.split('@')[0] || ''
+  return name ? `Dag ${name}.` : 'Welkom.'
+})
+
 const today = new Date()
 const dayNames = ['Zondag', 'Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag']
 const monthNames = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december']
@@ -47,7 +53,7 @@ function statusClasses(status: string) {
           {{ dateString }}
         </div>
         <h1 class="text-2xl lg:text-4xl font-semibold tracking-tight text-[#0A1520] leading-tight">
-          Dag Elmer.
+          {{ greeting }}
         </h1>
       </div>
       <div class="hidden sm:flex gap-2.5">

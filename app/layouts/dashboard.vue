@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const mobileMenuOpen = ref(false)
 const route = useRoute()
+const { user, initials, fullName, roleLabel, logout } = useAuthUser()
 
 const navigation = [
   { label: 'Overzicht', icon: 'i-lucide-layout-dashboard', to: '/dashboard' },
@@ -36,7 +37,7 @@ watch(route, () => { mobileMenuOpen.value = false })
           :to="item.to"
           class="flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-colors"
           active-class="bg-primary-500/10 text-[#0A1520] font-semibold"
-          inactive-class="text-[#5A6A78] hover:bg-black/[0.04]"
+          inactive-class="text-[#2D3E4A] hover:bg-black/[0.04]"
         >
           <UIcon :name="item.icon" class="size-[18px]" />
           {{ item.label }}
@@ -44,13 +45,21 @@ watch(route, () => { mobileMenuOpen.value = false })
       </nav>
       <div class="p-3 mt-auto">
         <div class="flex items-center gap-2.5 p-3 rounded-[10px] bg-[#F4F7F8] border border-black/[0.08]">
-          <div class="w-8 h-8 rounded-full bg-primary-500 text-white flex items-center justify-center text-[13px] font-semibold">
-            EB
+          <div class="w-8 h-8 rounded-full bg-primary-500 text-white flex items-center justify-center text-[13px] font-semibold shrink-0">
+            {{ initials }}
           </div>
-          <div class="leading-tight">
-            <div class="text-[13px] font-semibold text-[#0A1520]">Elmer Bakker</div>
-            <div class="text-[11px] text-[#5A6A78]">Havenmeester</div>
+          <div class="leading-tight min-w-0 flex-1">
+            <div class="text-[13px] font-semibold text-[#0A1520] truncate">{{ fullName }}</div>
+            <div class="text-[11px] text-[#5A6A78] truncate">{{ roleLabel }}</div>
           </div>
+          <button
+            type="button"
+            class="shrink-0 p-1.5 rounded-md text-[#2D3E4A] hover:bg-black/[0.04]"
+            aria-label="Uitloggen"
+            @click="logout"
+          >
+            <UIcon name="i-lucide-log-out" class="size-4" />
+          </button>
         </div>
       </div>
     </aside>
@@ -60,7 +69,7 @@ watch(route, () => { mobileMenuOpen.value = false })
       <div class="flex items-center justify-between px-4 h-14">
         <NautarLogo :size="16" />
         <div class="w-8 h-8 rounded-full bg-primary-500 text-white flex items-center justify-center text-[12px] font-semibold">
-          EB
+          {{ initials }}
         </div>
       </div>
     </div>
@@ -76,7 +85,7 @@ watch(route, () => { mobileMenuOpen.value = false })
         <template v-for="item in bottomNav" :key="item.label">
           <button
             v-if="item.action === 'menu'"
-            class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors text-[#5A6A78]"
+            class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors text-[#2D3E4A]"
             @click="mobileMenuOpen = !mobileMenuOpen"
           >
             <UIcon :name="item.icon" class="size-6" />
@@ -87,7 +96,7 @@ watch(route, () => { mobileMenuOpen.value = false })
             :to="item.to"
             class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors"
             active-class="text-primary-500"
-            inactive-class="text-[#5A6A78]"
+            inactive-class="text-[#2D3E4A]"
           >
             <UIcon :name="item.icon" class="size-6" />
             <span class="text-[10px] font-medium">{{ item.label }}</span>
@@ -116,13 +125,30 @@ watch(route, () => { mobileMenuOpen.value = false })
               :to="item.to"
               class="flex items-center gap-3 px-4 py-3.5 rounded-[12px] text-[15px] font-medium transition-colors"
               active-class="bg-primary-500/10 text-[#0A1520] font-semibold"
-              inactive-class="text-[#5A6A78]"
+              inactive-class="text-[#2D3E4A]"
               @click="mobileMenuOpen = false"
             >
               <UIcon :name="item.icon" class="size-5" />
               {{ item.label }}
             </NuxtLink>
           </nav>
+          <div v-if="user" class="mt-3 mx-4 pt-3 border-t border-black/[0.08] flex items-center gap-3">
+            <div class="w-9 h-9 rounded-full bg-primary-500 text-white flex items-center justify-center text-[13px] font-semibold shrink-0">
+              {{ initials }}
+            </div>
+            <div class="leading-tight min-w-0 flex-1">
+              <div class="text-[14px] font-semibold text-[#0A1520] truncate">{{ fullName }}</div>
+              <div class="text-[12px] text-[#5A6A78] truncate">{{ roleLabel }}</div>
+            </div>
+            <button
+              type="button"
+              class="px-3 py-2 rounded-[10px] text-[13px] font-medium text-[#2D3E4A] hover:bg-black/[0.04] inline-flex items-center gap-1.5"
+              @click="logout"
+            >
+              <UIcon name="i-lucide-log-out" class="size-4" />
+              Uitloggen
+            </button>
+          </div>
         </div>
       </div>
     </Transition>
