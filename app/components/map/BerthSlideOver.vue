@@ -79,7 +79,7 @@ function formatDateTime(d: string) {
   <Transition name="slide">
     <div
       v-if="open"
-      class="fixed inset-y-0 right-0 w-[420px] bg-white shadow-2xl z-50 flex flex-col border-l border-black/[0.08]"
+      class="fixed inset-y-0 right-0 w-full sm:w-[420px] bg-white shadow-2xl z-50 flex flex-col border-l border-black/[0.08]"
     >
       <!-- Header -->
       <div class="px-5 pt-5 pb-4 border-b border-black/[0.08]">

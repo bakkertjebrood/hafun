@@ -33,7 +33,7 @@ function formatCurrency(amount: number) {
 </script>
 
 <template>
-  <div class="p-7 max-w-[1200px]">
+  <div class="p-4 lg:p-7 max-w-[1200px]">
     <div v-if="loading" class="text-sm text-[#5A6A78]">Laden...</div>
     <template v-else-if="customer">
       <!-- Back + Header -->
@@ -42,33 +42,33 @@ function formatCurrency(amount: number) {
           <UIcon name="i-lucide-arrow-left" class="size-3.5" />
           Huurders
         </NuxtLink>
-        <div class="flex items-start justify-between">
-          <div class="flex items-center gap-4">
-            <div class="w-14 h-14 rounded-full bg-primary-500 text-white flex items-center justify-center text-xl font-semibold">
+        <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div class="flex items-center gap-3 lg:gap-4">
+            <div class="w-12 h-12 lg:w-14 lg:h-14 rounded-full bg-primary-500 text-white flex items-center justify-center text-lg lg:text-xl font-semibold shrink-0">
               {{ customer.name.split(' ').slice(-1)[0]?.[0] || '?' }}
             </div>
             <div>
-              <h1 class="text-2xl font-semibold text-[#0A1520] tracking-tight">{{ customer.name }}</h1>
-              <div class="flex items-center gap-3 mt-1">
+              <h1 class="text-xl lg:text-2xl font-semibold text-[#0A1520] tracking-tight">{{ customer.name }}</h1>
+              <div class="flex flex-wrap items-center gap-2 mt-1">
                 <span class="text-xs text-[#5A6A78]">{{ contractLabels[customer.contractType] }}</span>
-                <span v-if="customer.email" class="text-xs text-[#5A6A78]">{{ customer.email }}</span>
+                <span v-if="customer.email" class="text-xs text-[#5A6A78] hidden sm:inline">{{ customer.email }}</span>
                 <span v-if="customer.phone" class="text-xs text-[#5A6A78]">{{ customer.phone }}</span>
               </div>
             </div>
           </div>
           <div class="flex gap-2">
-            <UButton color="neutral" variant="outline" class="rounded-full" size="sm">
-              Bericht sturen
+            <UButton color="neutral" variant="outline" class="rounded-full flex-1 sm:flex-none" size="sm">
+              Bericht
             </UButton>
-            <UButton color="primary" class="rounded-full" size="sm">
-              Factuur maken
+            <UButton color="primary" class="rounded-full flex-1 sm:flex-none" size="sm">
+              Factuur
             </UButton>
           </div>
         </div>
       </div>
 
       <!-- Grid -->
-      <div class="grid grid-cols-[1fr_1fr] gap-4">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
         <!-- Boten -->
         <div class="bg-white border border-black/[0.08] rounded-[14px] p-5">
           <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-3">

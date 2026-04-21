@@ -14,7 +14,11 @@ export default defineNuxtConfig({
     head: {
       title: 'Nautar',
       meta: [
-        { name: 'description', content: 'Marina management, op stroom' }
+        { name: 'description', content: 'Marina management, op stroom' },
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
+        { name: 'apple-mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
+        { name: 'theme-color', content: '#00A9A5' }
       ],
       link: [
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },

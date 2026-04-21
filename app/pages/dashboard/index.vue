@@ -39,29 +39,29 @@ function statusClasses(status: string) {
 </script>
 
 <template>
-  <div class="p-7 max-w-[1400px]">
+  <div class="p-4 lg:p-7 max-w-[1400px]">
     <!-- Topbar -->
-    <div class="flex items-end justify-between mb-7">
+    <div class="flex items-end justify-between mb-5 lg:mb-7">
       <div>
-        <div class="text-xs text-[#5A6A78] mb-1.5 tracking-wide">
-          {{ dateString }} · Jachthaven Lands End
+        <div class="text-xs text-[#5A6A78] mb-1 tracking-wide">
+          {{ dateString }}
         </div>
-        <h1 class="text-4xl font-semibold tracking-tight text-[#0A1520] leading-tight">
+        <h1 class="text-2xl lg:text-4xl font-semibold tracking-tight text-[#0A1520] leading-tight">
           Dag Elmer.
         </h1>
       </div>
-      <div class="flex gap-2.5">
-        <UButton color="neutral" variant="outline" class="rounded-full">
+      <div class="hidden sm:flex gap-2.5">
+        <UButton color="neutral" variant="outline" class="rounded-full" size="sm">
           Exporteer
         </UButton>
-        <UButton color="primary" class="rounded-full">
-          + Nieuwe reservering
+        <UButton color="primary" class="rounded-full" size="sm">
+          + Reservering
         </UButton>
       </div>
     </div>
 
     <!-- KPI row -->
-    <div class="grid grid-cols-4 gap-3.5 mb-5">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 lg:gap-3.5 mb-4 lg:mb-5">
       <div
         v-for="kpi in kpis"
         :key="kpi.label"
@@ -81,7 +81,7 @@ function statusClasses(status: string) {
     </div>
 
     <!-- Two column -->
-    <div class="grid grid-cols-[1.4fr_1fr] gap-3.5">
+    <div class="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-2.5 lg:gap-3.5">
       <!-- Marina map placeholder -->
       <div class="bg-white border border-black/[0.08] rounded-[14px] p-5">
         <div class="flex items-center justify-between mb-3.5">
@@ -147,7 +147,7 @@ function statusClasses(status: string) {
     </div>
 
     <!-- Bottom row -->
-    <div class="grid grid-cols-2 gap-3.5 mt-3.5">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-2.5 lg:gap-3.5 mt-2.5 lg:mt-3.5">
       <!-- Occupancy chart -->
       <div class="bg-white border border-black/[0.08] rounded-[14px] p-5">
         <div class="text-sm font-semibold text-[#0A1520] tracking-tight mb-3.5">Bezetting — 14 dagen</div>

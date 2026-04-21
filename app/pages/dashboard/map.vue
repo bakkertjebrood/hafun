@@ -18,6 +18,7 @@ const markers: any[] = []
 // Pier drawing state
 const drawMode = ref<'off' | 'main' | 'head'>('off')
 const drawPierName = ref('')
+const showPanel = ref(false) // mobile panel toggle
 const drawPoints = ref<number[][]>([])
 const drawHeadPoints = ref<number[][]>([])
 const drawnPiers = ref<any[]>([])
@@ -395,20 +396,19 @@ const filteredBerths = computed(() => {
 <template>
   <div class="flex flex-col" style="height: 100vh">
     <!-- Topbar -->
-    <div class="px-6 py-3 bg-white border-b border-black/[0.08] flex items-center justify-between shrink-0">
-      <div>
-        <h1 class="text-xl font-semibold text-[#0A1520] tracking-tight">Ligplaatskaart</h1>
-        <div class="text-xs text-[#5A6A78] mt-0.5">{{ mapData?.marina?.name || 'Laden...' }}</div>
+    <div class="px-4 lg:px-6 py-2.5 lg:py-3 bg-white border-b border-black/[0.08] flex items-center justify-between shrink-0 gap-2">
+      <div class="shrink-0">
+        <h1 class="text-base lg:text-xl font-semibold text-[#0A1520] tracking-tight">Kaart</h1>
       </div>
 
-      <div class="flex items-center gap-2 flex-wrap">
+      <div class="flex items-center gap-1.5 overflow-x-auto">
         <!-- Pier filters -->
-        <div class="flex gap-1">
+        <div class="flex gap-1 shrink-0">
           <button
             v-for="pier in pierNames"
             :key="pier"
-            class="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all"
-            :class="activePier === pier ? 'bg-[#0A1520] text-white' : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/10'"
+            class="px-2 py-1 rounded-full text-[10px] lg:text-[11px] font-medium transition-all"
+            :class="activePier === pier ? 'bg-[#0A1520] text-white' : 'bg-[#F4F7F8] text-[#5A6A78]'"
             @click="activePier = activePier === pier ? null : pier"
           >
             {{ pier }}
@@ -416,23 +416,21 @@ const filteredBerths = computed(() => {
         </div>
 
         <!-- Actions -->
-        <div class="flex gap-1.5 ml-1">
-          <button
-            class="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
-            :class="editMode ? 'bg-primary-500 text-white' : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/10'"
-            @click="toggleEditMode"
-          >
-            {{ editMode ? 'Klaar' : 'Bewerken' }}
-          </button>
-        </div>
+        <button
+          class="px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold transition-all shrink-0"
+          :class="editMode ? 'bg-primary-500 text-white' : 'bg-[#F4F7F8] text-[#5A6A78]'"
+          @click="toggleEditMode"
+        >
+          {{ editMode ? 'Klaar' : 'Bewerken' }}
+        </button>
 
-        <!-- Status counts -->
-        <div class="flex gap-1 ml-1">
+        <!-- Status counts (hidden on small mobile) -->
+        <div class="hidden sm:flex gap-1">
           <span
             v-for="(count, status) in counts"
             :key="status"
             v-show="(count as number) > 0"
-            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-black/[0.08] text-[10px] font-medium"
+            class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white border border-black/[0.08] text-[9px] lg:text-[10px] font-medium"
           >
             <span class="w-1.5 h-1.5 rounded-full" :style="{ background: statusColors[status as string] }" />
             {{ count }}
@@ -475,8 +473,22 @@ const filteredBerths = computed(() => {
     <div class="flex-1 relative">
       <div ref="mapContainer" class="w-full h-full" />
 
+      <!-- Mobile panel toggle -->
+      <button
+        class="lg:hidden absolute top-3 left-3 z-[1001] w-10 h-10 bg-white/95 backdrop-blur-sm rounded-full border border-black/[0.08] shadow-lg flex items-center justify-center"
+        @click="showPanel = !showPanel"
+      >
+        <UIcon :name="showPanel ? 'i-lucide-x' : 'i-lucide-list'" class="size-5 text-[#0A1520]" />
+      </button>
+
       <!-- Left panel: berths OR pier tools -->
-      <div class="absolute top-4 left-4 w-[280px] max-h-[calc(100%-32px)] bg-white/95 backdrop-blur-sm rounded-[14px] border border-black/[0.08] shadow-lg overflow-hidden flex flex-col z-[1000]">
+      <div
+        class="absolute z-[1000] bg-white/95 backdrop-blur-sm border border-black/[0.08] shadow-lg overflow-hidden flex flex-col transition-transform duration-300"
+        :class="[
+          showPanel ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
+          'top-0 left-0 w-[280px] max-h-full lg:top-4 lg:left-4 lg:max-h-[calc(100%-32px)] lg:rounded-[14px] rounded-r-[14px]'
+        ]"
+      >
         <!-- Edit mode: pier drawing tools -->
         <template v-if="editMode">
           <div class="px-4 py-3 border-b border-black/[0.08]">

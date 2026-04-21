@@ -33,25 +33,25 @@ watch(search, () => {
 </script>
 
 <template>
-  <div class="p-7 max-w-[1200px]">
+  <div class="p-4 lg:p-7 max-w-[1200px]">
     <!-- Header -->
-    <div class="flex items-end justify-between mb-6">
+    <div class="flex items-end justify-between mb-4 lg:mb-6">
       <div>
-        <h1 class="text-2xl font-semibold text-[#0A1520] tracking-tight">Huurders</h1>
-        <div class="text-xs text-[#5A6A78] mt-1">{{ customers.length }} klanten</div>
+        <h1 class="text-xl lg:text-2xl font-semibold text-[#0A1520] tracking-tight">Huurders</h1>
+        <div class="text-xs text-[#5A6A78] mt-0.5">{{ customers.length }} klanten</div>
       </div>
-      <UButton color="primary" class="rounded-full">
-        + Nieuwe klant
+      <UButton color="primary" class="rounded-full" size="sm">
+        + Nieuw
       </UButton>
     </div>
 
     <!-- Search -->
-    <div class="mb-5">
+    <div class="mb-4">
       <input
         v-model="search"
         type="text"
         placeholder="Zoek op naam, email, boot..."
-        class="w-full max-w-md px-4 py-2.5 text-sm rounded-full border border-black/[0.08] bg-white focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+        class="w-full px-4 py-2.5 text-sm rounded-full border border-black/[0.08] bg-white focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
       >
     </div>
 
@@ -79,21 +79,21 @@ watch(search, () => {
           </div>
         </div>
 
-        <!-- Boats -->
-        <div v-if="customer.boats?.length" class="text-right shrink-0">
+        <!-- Boats (hidden on small screens) -->
+        <div v-if="customer.boats?.length" class="hidden md:block text-right shrink-0">
           <div class="text-xs font-medium text-[#0A1520]">{{ customer.boats[0].name }}</div>
           <div class="text-[11px] text-[#5A6A78]">{{ customer.boats[0].type }} · {{ customer.boats[0].length }}m</div>
         </div>
 
         <!-- Berth -->
         <div v-if="customer.berths?.length" class="shrink-0">
-          <span class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-primary-500/10 text-primary-500">
+          <span class="px-2 py-0.5 rounded-full text-[10px] lg:text-[11px] font-semibold bg-primary-500/10 text-primary-500">
             {{ customer.berths[0].code }}
           </span>
         </div>
 
-        <!-- Contract -->
-        <div class="shrink-0 w-28 text-right">
+        <!-- Contract (hidden on mobile) -->
+        <div class="hidden lg:block shrink-0 w-28 text-right">
           <span class="text-[11px] text-[#5A6A78]">{{ contractLabels[customer.contractType] || customer.contractType }}</span>
         </div>
 
