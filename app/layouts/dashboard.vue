@@ -35,9 +35,8 @@ watch(route, () => { mobileMenuOpen.value = false })
           v-for="item in navigation"
           :key="item.to"
           :to="item.to"
-          class="flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-colors"
-          active-class="bg-primary-500/10 text-[#0A1520] font-semibold"
-          inactive-class="text-[#0A1520] hover:bg-black/[0.04]"
+          class="flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-colors text-[#0A1520] hover:bg-black/[0.04]"
+          active-class="!bg-primary-500/10 font-semibold"
         >
           <UIcon :name="item.icon" class="size-[18px]" />
           {{ item.label }}
@@ -94,9 +93,8 @@ watch(route, () => { mobileMenuOpen.value = false })
           <NuxtLink
             v-else
             :to="item.to"
-            class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors"
-            active-class="text-primary-500"
-            inactive-class="text-[#0A1520]"
+            class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors text-[#0A1520]"
+            active-class="!text-primary-500"
           >
             <UIcon :name="item.icon" class="size-6" />
             <span class="text-[10px] font-medium">{{ item.label }}</span>
@@ -123,9 +121,8 @@ watch(route, () => { mobileMenuOpen.value = false })
               v-for="item in navigation"
               :key="item.to"
               :to="item.to"
-              class="flex items-center gap-3 px-4 py-3.5 rounded-[12px] text-[15px] font-medium transition-colors"
-              active-class="bg-primary-500/10 text-[#0A1520] font-semibold"
-              inactive-class="text-[#0A1520]"
+              class="flex items-center gap-3 px-4 py-3.5 rounded-[12px] text-[15px] font-medium transition-colors text-[#0A1520]"
+              active-class="!bg-primary-500/10 font-semibold"
               @click="mobileMenuOpen = false"
             >
               <UIcon :name="item.icon" class="size-5" />
