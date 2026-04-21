@@ -30,6 +30,25 @@ model Marina {
   guests    Guest[]
   invoices  Invoice[]
   notes     Note[]
+  pierLines PierLine[]
+}
+
+// Pier geometry — drawn on the map
+// points: [[lat,lng], ...] main spine of the pier
+// headPoints: [[lat,lng], ...] optional T-head (perpendicular kopzijde)
+model PierLine {
+  id         String   @id @default(uuid())
+  marinaId   String
+  name       String   // "A", "B", "C" etc.
+  points     Json     // [[lat,lng], [lat,lng], ...] main line
+  headPoints Json?    // [[lat,lng], [lat,lng]] T-head kopzijde
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  marina Marina @relation(fields: [marinaId], references: [id])
+
+  @@unique([marinaId, name])
+  @@index([marinaId])
 }
 
 enum Role {

@@ -36,7 +36,8 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     jwtSecret: process.env.JWT_SECRET || 'nautar-dev-secret-change-in-production',
-    databaseUrl: process.env.DATABASE_URL || ''
+    databaseUrl: process.env.DATABASE_URL || '',
+    claudeApiKey: process.env.CLAUDE_API_KEY || ''
   },
 
   compatibilityDate: '2025-01-15',

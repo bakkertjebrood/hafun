@@ -3,42 +3,41 @@ definePageMeta({ layout: 'dashboard' })
 
 const mapContainer = ref<HTMLElement>()
 let mapInstance: any = null
-let maplibregl: any = null
+let L: any = null
+
 const selectedBerth = ref<any>(null)
 const slideOverOpen = ref(false)
 const activePier = ref<string | null>(null)
 const loading = ref(true)
-
-// TODO: get from auth/session. Hardcoded for now.
 const marinaId = ref('')
+const mapData = ref<any>(null)
+const editMode = ref(false)
+const positioningLoading = ref(false)
+const markers: any[] = []
+
+// Pier drawing state
+const drawMode = ref<'off' | 'main' | 'head'>('off')
+const drawPierName = ref('')
+const drawPoints = ref<number[][]>([])
+const drawHeadPoints = ref<number[][]>([])
+const drawnPiers = ref<any[]>([])
+const pierLayers: any[] = []
+let drawPolyline: any = null
+let drawHeadPolyline: any = null
 
 const statusColors: Record<string, string> = {
-  FREE: '#10B981',
-  OCCUPIED: '#EF4444',
-  SEASONAL: '#F59E0B',
-  STORAGE: '#8B5CF6',
-  TEMPORARY: '#F97316',
-  EMPTY: '#9CA3AF',
-  RELOCATED: '#6366F1'
+  FREE: '#10B981', OCCUPIED: '#EF4444', SEASONAL: '#F59E0B',
+  STORAGE: '#8B5CF6', TEMPORARY: '#F97316', EMPTY: '#9CA3AF', RELOCATED: '#6366F1'
 }
-
 const statusLabels: Record<string, string> = {
-  FREE: 'Vrij',
-  OCCUPIED: 'Bezet',
-  SEASONAL: 'Seizoen',
-  STORAGE: 'Stalling',
-  TEMPORARY: 'Tijdelijk',
-  EMPTY: 'Leeg',
-  RELOCATED: 'Verplaatst'
+  FREE: 'Vrij', OCCUPIED: 'Bezet', SEASONAL: 'Seizoen',
+  STORAGE: 'Stalling', TEMPORARY: 'Tijdelijk', EMPTY: 'Leeg', RELOCATED: 'Verplaatst'
 }
-
-const mapData = ref<any>(null)
 
 onMounted(async () => {
-  // Dynamic import — maplibre-gl doesn't work with SSR
-  const ml = await import('maplibre-gl')
-  await import('maplibre-gl/dist/maplibre-gl.css')
-  maplibregl = ml
+  const leaflet = await import('leaflet')
+  await import('leaflet/dist/leaflet.css')
+  L = leaflet.default || leaflet
 
   try {
     const discovered = await $fetch('/api/berths/discover') as any
@@ -51,6 +50,7 @@ onMounted(async () => {
 
   await nextTick()
   initMap()
+  await loadPiers()
   loading.value = false
 })
 
@@ -60,98 +60,305 @@ async function refreshMapData() {
 }
 
 function initMap() {
-  if (!mapContainer.value || !maplibregl) return
+  if (!mapContainer.value || !L) return
 
   const center: [number, number] = [
-    mapData.value?.marina?.gpsLng || 5.75972931,
-    mapData.value?.marina?.gpsLat || 52.58038836
+    mapData.value?.marina?.gpsLat || 52.58038836,
+    mapData.value?.marina?.gpsLng || 5.75972931
   ]
 
-  const MapClass = maplibregl.Map || maplibregl.default?.Map
-  if (!MapClass) {
-    console.error('MapLibre Map class not found', Object.keys(maplibregl))
-    return
-  }
+  mapInstance = L.map(mapContainer.value, { center, zoom: 17, maxZoom: 19 })
 
-  mapInstance = new MapClass({
-    container: mapContainer.value,
-    style: 'https://demotiles.maplibre.org/style.json',
-    center,
-    zoom: 15,
-    maxZoom: 20
+  const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '&copy; Esri, Maxar, Earthstar Geographics', maxZoom: 19
+  })
+  const labels = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', maxZoom: 19, pane: 'overlayPane'
+  })
+  const street = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxZoom: 19
   })
 
-  const NavControl = maplibregl.NavigationControl || maplibregl.default?.NavigationControl
-  if (NavControl) mapInstance.addControl(new NavControl(), 'top-right')
+  satellite.addTo(mapInstance)
+  labels.addTo(mapInstance)
+  L.control.layers({ 'Satelliet': satellite, 'Kaart': street }, { 'Labels': labels }, { position: 'topright' }).addTo(mapInstance)
 
-  mapInstance.on('load', () => {
-    addBerthMarkers()
-  })
+  // Map click handler for pier drawing
+  mapInstance.on('click', onMapClick)
+  mapInstance.on('dblclick', onMapDblClick)
 
-  // Fallback: if map already loaded (style was cached)
-  if (mapInstance.loaded()) {
-    addBerthMarkers()
+  addBerthMarkers()
+}
+
+// ─── PIER DRAWING ───────────────────────────────
+
+async function loadPiers() {
+  if (!marinaId.value) return
+  drawnPiers.value = await $fetch('/api/piers', { query: { marinaId: marinaId.value } }) as any[]
+  renderPierLines()
+}
+
+function renderPierLines() {
+  // Clear existing pier lines
+  pierLayers.forEach(l => l.remove())
+  pierLayers.length = 0
+  if (!mapInstance || !L) return
+
+  for (const pier of drawnPiers.value) {
+    const points = pier.points as number[][]
+    if (points.length < 2) continue
+
+    // Main line
+    const line = L.polyline(points, {
+      color: '#00A9A5', weight: 4, opacity: 0.8, dashArray: '8, 6'
+    }).addTo(mapInstance)
+
+    // Label at start
+    const labelIcon = L.divIcon({
+      className: 'pier-label',
+      html: `<div style="
+        background: #00A9A5; color: white; font-size: 11px; font-weight: 700;
+        padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+      ">Steiger ${pier.name}</div>`,
+      iconAnchor: [-8, 12]
+    })
+    const label = L.marker(points[0], { icon: labelIcon, interactive: false }).addTo(mapInstance)
+
+    pierLayers.push(line, label)
+
+    // T-head line
+    const headPoints = pier.headPoints as number[][] | null
+    if (headPoints && headPoints.length >= 2) {
+      const headLine = L.polyline(headPoints, {
+        color: '#F59E0B', weight: 4, opacity: 0.8, dashArray: '8, 6'
+      }).addTo(mapInstance)
+
+      const headLabel = L.divIcon({
+        className: 'pier-label',
+        html: `<div style="
+          background: #F59E0B; color: white; font-size: 10px; font-weight: 700;
+          padding: 2px 6px; border-radius: 999px; white-space: nowrap;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        ">${pier.name}-KOP</div>`,
+        iconAnchor: [-8, 12]
+      })
+      const hl = L.marker(headPoints[0], { icon: headLabel, interactive: false }).addTo(mapInstance)
+      pierLayers.push(headLine, hl)
+    }
   }
 }
 
-function addBerthMarkers() {
-  if (!mapInstance || !maplibregl || !mapData.value?.berths) return
+function startDrawPier(name: string) {
+  drawPierName.value = name
+  drawPoints.value = []
+  drawHeadPoints.value = []
+  drawMode.value = 'main'
+  mapInstance.getContainer().style.cursor = 'crosshair'
 
-  // Since berths don't have real GPS coords yet, arrange them
-  // along the piers near the marina center
-  const center = {
-    lng: mapData.value.marina?.gpsLng || 5.75972931,
-    lat: mapData.value.marina?.gpsLat || 52.58038836
+  // Disable double-click zoom during drawing
+  mapInstance.doubleClickZoom.disable()
+}
+
+function onMapClick(e: any) {
+  if (drawMode.value === 'off') return
+
+  const point = [e.latlng.lat, e.latlng.lng]
+
+  if (drawMode.value === 'main') {
+    drawPoints.value.push(point)
+    updateDrawPreview()
+  }
+  else if (drawMode.value === 'head') {
+    drawHeadPoints.value.push(point)
+    updateDrawPreview()
+    // T-head is just 2 points (start + end)
+    if (drawHeadPoints.value.length >= 2) {
+      finishDrawPier()
+    }
+  }
+}
+
+function onMapDblClick(e: any) {
+  if (drawMode.value !== 'main') return
+  e.originalEvent.preventDefault()
+
+  if (drawPoints.value.length >= 2) {
+    // Ask: add T-head?
+    drawMode.value = 'head'
+    updateDrawPreview()
+  }
+}
+
+function updateDrawPreview() {
+  // Main line preview
+  if (drawPolyline) drawPolyline.remove()
+  if (drawPoints.value.length >= 2) {
+    drawPolyline = L.polyline(drawPoints.value, {
+      color: '#00A9A5', weight: 5, opacity: 0.9
+    }).addTo(mapInstance)
   }
 
-  const piers = [...new Set(mapData.value.berths.map(b => b.pier))].sort()
-  const pierOffsets: Record<string, { lat: number; lng: number; angle: number }> = {}
+  // Head line preview
+  if (drawHeadPolyline) drawHeadPolyline.remove()
+  if (drawHeadPoints.value.length >= 1) {
+    const pts = drawHeadPoints.value.length >= 2 ? drawHeadPoints.value : [...drawHeadPoints.value]
+    if (pts.length >= 2) {
+      drawHeadPolyline = L.polyline(pts, {
+        color: '#F59E0B', weight: 5, opacity: 0.9
+      }).addTo(mapInstance)
+    }
+  }
+}
 
-  piers.forEach((pier, idx) => {
-    pierOffsets[pier] = {
-      lat: center.lat + (idx - piers.length / 2) * 0.0006,
-      lng: center.lng - 0.001,
-      angle: 0
+async function finishDrawPier() {
+  if (drawPoints.value.length < 2) return
+
+  await $fetch('/api/piers', {
+    method: 'POST',
+    body: {
+      marinaId: marinaId.value,
+      name: drawPierName.value,
+      points: drawPoints.value,
+      headPoints: drawHeadPoints.value.length >= 2 ? drawHeadPoints.value : null
+    }
+  })
+
+  cancelDraw()
+  await loadPiers()
+}
+
+function skipHead() {
+  finishDrawPier()
+}
+
+function cancelDraw() {
+  drawMode.value = 'off'
+  drawPierName.value = ''
+  drawPoints.value = []
+  drawHeadPoints.value = []
+  if (drawPolyline) { drawPolyline.remove(); drawPolyline = null }
+  if (drawHeadPolyline) { drawHeadPolyline.remove(); drawHeadPolyline = null }
+  mapInstance?.getContainer()?.style.setProperty('cursor', '')
+  mapInstance?.doubleClickZoom.enable()
+}
+
+async function deletePier(id: string) {
+  await $fetch(`/api/piers/${id}`, { method: 'DELETE' })
+  await loadPiers()
+}
+
+// ─── POSITION BERTHS ALONG PIERS ──────────────
+
+async function positionBerthsAlongPiers() {
+  if (!marinaId.value) return
+  positioningLoading.value = true
+  try {
+    const result = await $fetch('/api/piers/position-berths', {
+      method: 'POST',
+      body: { marinaId: marinaId.value }
+    }) as any
+    await refreshMapData()
+    clearMarkers()
+    addBerthMarkers()
+    if (markers.length > 0) {
+      const group = L.featureGroup(markers)
+      mapInstance.fitBounds(group.getBounds().pad(0.1))
+    }
+  }
+  catch (e: any) {
+    console.error('Positioning failed:', e)
+    alert(e.data?.message || 'Positionering mislukt')
+  }
+  finally {
+    positioningLoading.value = false
+  }
+}
+
+// ─── BERTH MARKERS ──────────────────────────────
+
+function clearMarkers() {
+  markers.forEach(m => m.remove())
+  markers.length = 0
+}
+
+function addBerthMarkers() {
+  if (!mapInstance || !L || !mapData.value?.berths) return
+  clearMarkers()
+
+  const center = {
+    lat: mapData.value.marina?.gpsLat || 52.58038836,
+    lng: mapData.value.marina?.gpsLng || 5.75972931
+  }
+
+  const pierList = [...new Set(mapData.value.berths.map((b: any) => b.pier))].sort()
+  const pierConfig: Record<string, { baseLng: number; baseLat: number }> = {}
+  pierList.forEach((pier: string, idx: number) => {
+    pierConfig[pier] = {
+      baseLng: center.lng + 0.0012 - idx * 0.0008,
+      baseLat: center.lat + 0.0008
     }
   })
 
   for (const berth of mapData.value.berths) {
-    const pierData = pierOffsets[berth.pier]
-    if (!pierData) continue
-
-    const berthsInPier = mapData.value.berths.filter(b => b.pier === berth.pier)
-    const idx = berthsInPier.indexOf(berth)
-
-    const lng = pierData.lng + idx * 0.00025
-    const lat = pierData.lat
+    let lat: number, lng: number
+    if (berth.gpsLat && berth.gpsLng) {
+      lat = berth.gpsLat
+      lng = berth.gpsLng
+    } else {
+      const config = pierConfig[berth.pier]
+      if (!config) continue
+      const berthsInPier = mapData.value.berths.filter((b: any) => b.pier === berth.pier)
+      const idx = berthsInPier.indexOf(berth)
+      lat = config.baseLat - idx * 0.00015
+      lng = config.baseLng
+    }
 
     const color = statusColors[berth.status] || '#9CA3AF'
+    const isEdit = editMode.value
 
-    const el = document.createElement('div')
-    el.className = 'berth-marker'
-    el.style.cssText = `
-      width: 18px; height: 24px; background: ${color};
-      border-radius: 4px; border: 2px solid white;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-      cursor: pointer; transition: transform 0.15s;
-    `
-    el.title = `${berth.code} — ${statusLabels[berth.status] || berth.status}`
-
-    el.addEventListener('mouseenter', () => {
-      el.style.transform = 'scale(1.3)'
-      el.style.zIndex = '10'
+    const icon = L.divIcon({
+      className: 'berth-marker-wrapper',
+      html: `<div class="berth-marker" style="
+        width: ${isEdit ? 20 : 14}px; height: ${isEdit ? 26 : 20}px; background: ${color};
+        border-radius: 3px; border: 2px solid ${isEdit ? '#00A9A5' : 'white'};
+        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        cursor: ${isEdit ? 'grab' : 'pointer'}; transition: transform 0.15s;
+      " title="${berth.code} — ${statusLabels[berth.status]}">
+        ${isEdit ? `<span style="position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:700;color:white;white-space:nowrap;text-shadow:0 0 3px #000,0 0 3px #000;">${berth.code}</span>` : ''}
+      </div>`,
+      iconSize: [isEdit ? 20 : 14, isEdit ? 26 : 20],
+      iconAnchor: [isEdit ? 10 : 7, isEdit ? 13 : 10]
     })
-    el.addEventListener('mouseleave', () => {
-      el.style.transform = 'scale(1)'
-      el.style.zIndex = '1'
-    })
-    el.addEventListener('click', () => openBerth(berth.id))
 
-    const MarkerClass = maplibregl.Marker || maplibregl.default?.Marker
-    new MarkerClass({ element: el })
-      .setLngLat([lng, lat])
-      .addTo(mapInstance)
+    const marker = L.marker([lat, lng], { icon, draggable: isEdit }).addTo(mapInstance)
+
+    if (isEdit) {
+      marker.on('dragend', async (e: any) => {
+        const pos = e.target.getLatLng()
+        await $fetch(`/api/berths/${berth.id}`, {
+          method: 'PUT',
+          body: { gpsLat: pos.lat, gpsLng: pos.lng }
+        })
+      })
+    }
+
+    marker.on('click', () => { if (!isEdit) openBerth(berth.id) })
+    marker.on('mouseover', (e: any) => {
+      e.target.getElement()?.querySelector('.berth-marker')?.style.setProperty('transform', 'scale(1.3)')
+    })
+    marker.on('mouseout', (e: any) => {
+      e.target.getElement()?.querySelector('.berth-marker')?.style.setProperty('transform', 'scale(1)')
+    })
+
+    markers.push(marker)
   }
+}
+
+function toggleEditMode() {
+  editMode.value = !editMode.value
+  if (!editMode.value) cancelDraw()
+  addBerthMarkers()
 }
 
 async function openBerth(id: string) {
@@ -163,60 +370,44 @@ async function openBerth(id: string) {
 async function onStatusChanged() {
   await refreshMapData()
   if (selectedBerth.value) {
-    const detail = await $fetch(`/api/berths/${selectedBerth.value.id}`)
-    selectedBerth.value = detail
-  }
-  // Rebuild markers
-  document.querySelectorAll('.berth-marker').forEach(el => el.remove())
-  // Remove all existing markers by re-adding
-  if (mapInstance) {
-    addBerthMarkers()
+    selectedBerth.value = await $fetch(`/api/berths/${selectedBerth.value.id}`)
   }
 }
 
 async function onNoteAdded() {
   if (selectedBerth.value) {
-    const detail = await $fetch(`/api/berths/${selectedBerth.value.id}`)
-    selectedBerth.value = detail
+    selectedBerth.value = await $fetch(`/api/berths/${selectedBerth.value.id}`)
   }
 }
 
 const counts = computed(() => mapData.value?.counts || {})
-const piers = computed(() => {
+const pierNames = computed(() => {
   if (!mapData.value?.berths) return []
-  return [...new Set(mapData.value.berths.map(b => b.pier))].sort()
+  return [...new Set(mapData.value.berths.map((b: any) => b.pier))].sort()
 })
-
 const filteredBerths = computed(() => {
   if (!mapData.value?.berths) return []
   if (!activePier.value) return mapData.value.berths
-  return mapData.value.berths.filter(b => b.pier === activePier.value)
+  return mapData.value.berths.filter((b: any) => b.pier === activePier.value)
 })
 </script>
 
 <template>
-  <div class="flex flex-col" style="height: calc(100vh)">
+  <div class="flex flex-col" style="height: 100vh">
     <!-- Topbar -->
-    <div class="px-6 py-4 bg-white border-b border-black/[0.08] flex items-center justify-between shrink-0">
+    <div class="px-6 py-3 bg-white border-b border-black/[0.08] flex items-center justify-between shrink-0">
       <div>
         <h1 class="text-xl font-semibold text-[#0A1520] tracking-tight">Ligplaatskaart</h1>
         <div class="text-xs text-[#5A6A78] mt-0.5">{{ mapData?.marina?.name || 'Laden...' }}</div>
       </div>
 
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 flex-wrap">
         <!-- Pier filters -->
         <div class="flex gap-1">
           <button
-            class="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
-            :class="!activePier ? 'bg-[#0A1520] text-white' : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/10'"
-            @click="activePier = null"
-          >
-            Alle
-          </button>
-          <button
-            v-for="pier in piers"
+            v-for="pier in pierNames"
             :key="pier"
-            class="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
+            class="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all"
             :class="activePier === pier ? 'bg-[#0A1520] text-white' : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/10'"
             @click="activePier = activePier === pier ? null : pier"
           >
@@ -224,17 +415,59 @@ const filteredBerths = computed(() => {
           </button>
         </div>
 
-        <!-- Legend pills -->
-        <div class="flex gap-1.5 ml-2">
+        <!-- Actions -->
+        <div class="flex gap-1.5 ml-1">
+          <button
+            class="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+            :class="editMode ? 'bg-primary-500 text-white' : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/10'"
+            @click="toggleEditMode"
+          >
+            {{ editMode ? 'Klaar' : 'Bewerken' }}
+          </button>
+        </div>
+
+        <!-- Status counts -->
+        <div class="flex gap-1 ml-1">
           <span
             v-for="(count, status) in counts"
             :key="status"
-            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-black/[0.08] text-[11px] font-medium"
+            v-show="(count as number) > 0"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-black/[0.08] text-[10px] font-medium"
           >
             <span class="w-1.5 h-1.5 rounded-full" :style="{ background: statusColors[status as string] }" />
-            {{ statusLabels[status as string] }} {{ count }}
+            {{ count }}
           </span>
         </div>
+      </div>
+    </div>
+
+    <!-- Draw mode bar -->
+    <div
+      v-if="drawMode !== 'off'"
+      class="px-6 py-2.5 bg-primary-500 text-white flex items-center justify-between shrink-0"
+    >
+      <div class="flex items-center gap-3">
+        <span class="text-sm font-semibold">
+          Teken Steiger {{ drawPierName }}
+          <span v-if="drawMode === 'main'">— Klik punten, dubbelklik om af te ronden</span>
+          <span v-if="drawMode === 'head'">— Klik 2 punten voor de T-kop (kopzijde)</span>
+        </span>
+        <span class="text-xs opacity-75">({{ drawPoints.length }} punten)</span>
+      </div>
+      <div class="flex gap-2">
+        <button
+          v-if="drawMode === 'head'"
+          class="px-3 py-1 rounded-full text-xs font-semibold bg-white/20 hover:bg-white/30"
+          @click="skipHead"
+        >
+          Geen T-kop, opslaan
+        </button>
+        <button
+          class="px-3 py-1 rounded-full text-xs font-semibold bg-white/20 hover:bg-white/30"
+          @click="cancelDraw"
+        >
+          Annuleer
+        </button>
       </div>
     </div>
 
@@ -242,34 +475,90 @@ const filteredBerths = computed(() => {
     <div class="flex-1 relative">
       <div ref="mapContainer" class="w-full h-full" />
 
-      <!-- Berth list overlay (left side) -->
-      <div class="absolute top-4 left-4 w-[280px] max-h-[calc(100%-32px)] bg-white/95 backdrop-blur-sm rounded-[14px] border border-black/[0.08] shadow-lg overflow-hidden flex flex-col">
-        <div class="px-4 py-3 border-b border-black/[0.08]">
-          <div class="text-sm font-semibold text-[#0A1520]">
-            Ligplaatsen
-            <span class="text-[#5A6A78] font-normal">({{ filteredBerths.length }})</span>
+      <!-- Left panel: berths OR pier tools -->
+      <div class="absolute top-4 left-4 w-[280px] max-h-[calc(100%-32px)] bg-white/95 backdrop-blur-sm rounded-[14px] border border-black/[0.08] shadow-lg overflow-hidden flex flex-col z-[1000]">
+        <!-- Edit mode: pier drawing tools -->
+        <template v-if="editMode">
+          <div class="px-4 py-3 border-b border-black/[0.08]">
+            <div class="text-sm font-semibold text-[#0A1520]">Steigers tekenen</div>
+            <div class="text-[11px] text-[#5A6A78] mt-0.5">Teken lijnen op de kaart per steiger</div>
           </div>
-        </div>
-        <div class="flex-1 overflow-y-auto">
-          <button
-            v-for="berth in filteredBerths"
-            :key="berth.id"
-            class="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.03] transition-colors text-left"
-            @click="openBerth(berth.id)"
-          >
-            <span
-              class="w-2.5 h-2.5 rounded-sm shrink-0"
-              :style="{ background: statusColors[berth.status] }"
-            />
-            <div class="flex-1 min-w-0">
-              <div class="text-[13px] font-semibold text-[#0A1520] truncate">{{ berth.code }}</div>
-              <div class="text-[11px] text-[#5A6A78] truncate">
-                {{ berth.customer?.name || (berth.boat?.name || 'Geen huurder') }}
-              </div>
+
+          <!-- Draw pier buttons -->
+          <div class="p-3 flex flex-col gap-2">
+            <button
+              v-for="pier in pierNames"
+              :key="pier"
+              class="flex items-center justify-between px-3 py-2 rounded-[10px] text-sm font-medium transition-all"
+              :class="drawnPiers.find(p => p.name === pier)
+                ? 'bg-primary-500/10 text-primary-500'
+                : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/5'"
+              @click="startDrawPier(pier)"
+            >
+              <span>Steiger {{ pier }}</span>
+              <span v-if="drawnPiers.find(p => p.name === pier)" class="text-[10px]">
+                Herteken
+              </span>
+              <span v-else class="text-[10px]">Teken</span>
+            </button>
+          </div>
+
+          <!-- Drawn piers list -->
+          <div v-if="drawnPiers.length" class="px-3 pb-2">
+            <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-2">
+              Getekend ({{ drawnPiers.length }})
             </div>
-            <span class="text-[10px] text-[#5A6A78]">{{ berth.length }}m</span>
-          </button>
-        </div>
+            <div
+              v-for="pier in drawnPiers"
+              :key="pier.id"
+              class="flex items-center justify-between py-1.5 text-xs"
+            >
+              <span class="font-medium text-[#0A1520]">
+                Steiger {{ pier.name }}
+                <span v-if="pier.headPoints" class="text-[#F59E0B]">+ T-kop</span>
+              </span>
+              <button class="text-red-400 hover:text-red-600 text-[10px]" @click="deletePier(pier.id)">
+                Verwijder
+              </button>
+            </div>
+          </div>
+
+          <!-- Position berths button -->
+          <div v-if="drawnPiers.length" class="p-3 border-t border-black/[0.08]">
+            <button
+              class="w-full py-2 rounded-full bg-primary-500 text-white text-sm font-semibold disabled:opacity-50"
+              :disabled="positioningLoading"
+              @click="positionBerthsAlongPiers"
+            >
+              {{ positioningLoading ? 'Bezig...' : 'Plaats berths op steigers' }}
+            </button>
+          </div>
+        </template>
+
+        <!-- Normal mode: berth list -->
+        <template v-else>
+          <div class="px-4 py-3 border-b border-black/[0.08]">
+            <div class="text-sm font-semibold text-[#0A1520]">
+              Ligplaatsen
+              <span class="text-[#5A6A78] font-normal">({{ filteredBerths.length }})</span>
+            </div>
+          </div>
+          <div class="flex-1 overflow-y-auto max-h-[600px]">
+            <button
+              v-for="berth in filteredBerths"
+              :key="berth.id"
+              class="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.03] transition-colors text-left"
+              @click="openBerth(berth.id)"
+            >
+              <span class="w-2.5 h-2.5 rounded-sm shrink-0" :style="{ background: statusColors[berth.status] }" />
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] font-semibold text-[#0A1520] truncate">{{ berth.code }}</div>
+                <div class="text-[11px] text-[#5A6A78] truncate">{{ berth.customer?.name || 'Geen huurder' }}</div>
+              </div>
+              <span class="text-[10px] text-[#5A6A78]">{{ berth.length }}m</span>
+            </button>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -284,3 +573,14 @@ const filteredBerths = computed(() => {
     />
   </div>
 </template>
+
+<style>
+.berth-marker-wrapper, .pier-label {
+  background: none !important;
+  border: none !important;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+</style>
