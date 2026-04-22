@@ -32,6 +32,7 @@ model Marina {
   invoices  Invoice[]
   notes     Note[]
   pierLines PierLine[]
+  tariffs   Tariff[]
 }
 
 // Pier geometry — drawn on the map
@@ -267,4 +268,31 @@ model Note {
 
   @@index([marinaId])
   @@index([berthId])
+}
+
+enum TariffType {
+  YEAR
+  SUMMER
+  WINTER
+  GUEST
+  PASSANT
+}
+
+model Tariff {
+  id          String     @id @default(uuid())
+  marinaId    String
+  name        String     // "Jaarplaats", "Seizoenplaats", "Passant per nacht"
+  type        TariffType
+  pricePerMeter Float    // prijs per strekkende meter
+  minLength   Float?     // minimum bootlengte
+  maxLength   Float?     // maximum bootlengte
+  vatRate     Float      @default(21)
+  touristTax  Float      @default(0) // toeristenbelasting per persoon per nacht
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  marina Marina @relation(fields: [marinaId], references: [id])
+
+  @@index([marinaId])
 }

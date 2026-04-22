@@ -29,6 +29,7 @@
     "leaflet": "^1.9.4",
     "maplibre-gl": "^5.23.0",
     "nuxt": "^4.4.2",
+    "pdfkit": "^0.18.0",
     "tailwindcss": "^4.2.2"
   },
   "devDependencies": {

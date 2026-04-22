@@ -5,13 +5,26 @@ const loading = ref(true)
 const marina = ref<any>(null)
 const users = ref<any[]>([])
 const piers = ref<any[]>([])
-const activeTab = ref<'marina' | 'users' | 'piers'>('marina')
+const tariffs = ref<any[]>([])
+const activeTab = ref<'marina' | 'users' | 'piers' | 'tariffs'>('marina')
 const saving = ref(false)
 const marinaId = ref('')
 
 // New user form
 const showNewUser = ref(false)
 const newUser = ref({ email: '', password: '', firstName: '', lastName: '', role: 'STAFF' })
+
+// New tariff form
+const showNewTariff = ref(false)
+const newTariff = ref({ name: '', type: 'YEAR', pricePerMeter: 0, vatRate: 21, touristTax: 0 })
+
+const tariffTypeLabels: Record<string, string> = {
+  YEAR: 'Jaarplaats',
+  SUMMER: 'Seizoenplaats',
+  WINTER: 'Winterstalling',
+  GUEST: 'Gastligplaats',
+  PASSANT: 'Passant per nacht'
+}
 
 const roleLabels: Record<string, string> = {
   ADMIN: 'Administrator',
@@ -23,7 +36,7 @@ const roleLabels: Record<string, string> = {
 onMounted(async () => {
   const discovered = await $fetch('/api/berths/discover') as any
   marinaId.value = discovered.marinaId
-  await Promise.all([fetchMarina(), fetchUsers(), fetchPiers()])
+  await Promise.all([fetchMarina(), fetchUsers(), fetchPiers(), fetchTariffs()])
   loading.value = false
 })
 
@@ -37,6 +50,28 @@ async function fetchUsers() {
 
 async function fetchPiers() {
   piers.value = await $fetch('/api/piers', { query: { marinaId: marinaId.value } }) as any[]
+}
+
+async function fetchTariffs() {
+  tariffs.value = await $fetch('/api/tariffs') as any[]
+}
+
+async function createTariff() {
+  if (!newTariff.value.name || !newTariff.value.pricePerMeter) return
+  saving.value = true
+  try {
+    await $fetch('/api/tariffs', { method: 'POST', body: newTariff.value })
+    newTariff.value = { name: '', type: 'YEAR', pricePerMeter: 0, vatRate: 21, touristTax: 0 }
+    showNewTariff.value = false
+    await fetchTariffs()
+  }
+  catch (e: any) { alert(e.data?.message || 'Fout') }
+  finally { saving.value = false }
+}
+
+async function deleteTariff(id: string) {
+  await $fetch(`/api/tariffs/${id}`, { method: 'DELETE' })
+  await fetchTariffs()
 }
 
 async function saveMarina() {
@@ -89,7 +124,8 @@ function formatDate(d: string) {
         v-for="tab in ([
           { key: 'marina', label: 'Haven' },
           { key: 'users', label: 'Gebruikers' },
-          { key: 'piers', label: 'Steigers' }
+          { key: 'piers', label: 'Steigers' },
+          { key: 'tariffs', label: 'Tarieven' }
         ] as const)"
         :key="tab.key"
         class="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
@@ -249,6 +285,91 @@ function formatDate(d: string) {
         </div>
         <div v-if="!piers.length" class="px-5 py-8 text-center text-sm text-[#5A6A78]">
           Geen steigers. Ga naar de kaart om steigers te tekenen.
+        </div>
+      </div>
+    </div>
+
+    <!-- Tariffs management -->
+    <div v-if="activeTab === 'tariffs'">
+      <div class="flex items-center justify-between mb-4">
+        <div class="text-sm font-semibold text-[#0A1520]">Tarieven ({{ tariffs.length }})</div>
+        <button
+          class="px-4 py-2 rounded-full bg-primary-500 text-white text-sm font-semibold"
+          @click="showNewTariff = !showNewTariff"
+        >
+          + Tarief
+        </button>
+      </div>
+
+      <!-- New tariff form -->
+      <div v-if="showNewTariff" class="bg-white border border-black/[0.08] rounded-[14px] p-5 mb-4">
+        <div class="text-sm font-semibold text-[#0A1520] mb-3">Nieuw tarief</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg">
+          <div>
+            <label class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1 block">Naam *</label>
+            <input v-model="newTariff.name" type="text" placeholder="bijv. Jaarplaats" class="w-full px-3 py-2.5 text-sm rounded-[10px] border border-black/[0.08] bg-[#F4F7F8]">
+          </div>
+          <div>
+            <label class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1 block">Type *</label>
+            <select v-model="newTariff.type" class="w-full px-3 py-2.5 text-sm rounded-[10px] border border-black/[0.08] bg-[#F4F7F8]">
+              <option v-for="(label, key) in tariffTypeLabels" :key="key" :value="key">{{ label }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1 block">Prijs per meter (€) *</label>
+            <input v-model.number="newTariff.pricePerMeter" type="number" step="0.01" min="0" class="w-full px-3 py-2.5 text-sm rounded-[10px] border border-black/[0.08] bg-[#F4F7F8]">
+          </div>
+          <div>
+            <label class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1 block">BTW %</label>
+            <select v-model.number="newTariff.vatRate" class="w-full px-3 py-2.5 text-sm rounded-[10px] border border-black/[0.08] bg-[#F4F7F8]">
+              <option :value="21">21%</option>
+              <option :value="9">9%</option>
+              <option :value="0">0%</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1 block">Toeristenbelasting (€/pers/nacht)</label>
+            <input v-model.number="newTariff.touristTax" type="number" step="0.01" min="0" class="w-full px-3 py-2.5 text-sm rounded-[10px] border border-black/[0.08] bg-[#F4F7F8]">
+          </div>
+        </div>
+        <button
+          class="px-5 py-2 rounded-full bg-primary-500 text-white text-sm font-semibold mt-3 disabled:opacity-50"
+          :disabled="saving"
+          @click="createTariff"
+        >
+          Aanmaken
+        </button>
+      </div>
+
+      <!-- Tariffs list -->
+      <div class="bg-white border border-black/[0.08] rounded-[14px] overflow-hidden">
+        <div
+          v-for="(tariff, i) in tariffs"
+          :key="tariff.id"
+          class="flex items-center gap-3 px-5 py-3.5"
+          :class="i < tariffs.length - 1 ? 'border-b border-black/[0.08]' : ''"
+        >
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-semibold text-[#0A1520]">{{ tariff.name }}</div>
+            <div class="text-xs text-[#5A6A78]">
+              {{ tariffTypeLabels[tariff.type] || tariff.type }}
+              · €{{ tariff.pricePerMeter.toFixed(2) }}/m
+              · {{ tariff.vatRate }}% BTW
+              <span v-if="tariff.touristTax > 0"> · €{{ tariff.touristTax.toFixed(2) }} toeristenbelasting</span>
+            </div>
+          </div>
+          <span
+            class="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+            :class="tariff.active ? 'bg-emerald-500/10 text-emerald-500' : 'bg-[#F4F7F8] text-[#5A6A78]'"
+          >
+            {{ tariff.active ? 'Actief' : 'Inactief' }}
+          </span>
+          <button class="text-xs text-red-400 hover:text-red-600" @click="deleteTariff(tariff.id)">
+            Verwijder
+          </button>
+        </div>
+        <div v-if="!tariffs.length" class="px-5 py-8 text-center text-sm text-[#5A6A78]">
+          Nog geen tarieven. Voeg er een toe om automatisch facturen te berekenen.
         </div>
       </div>
     </div>

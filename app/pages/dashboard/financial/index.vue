@@ -164,6 +164,13 @@ watch(statusFilter, () => fetchInvoices())
         >
           {{ statusLabels[inv.status] }}
         </span>
+        <a
+          :href="`/api/invoices/${inv.id}/pdf`"
+          target="_blank"
+          class="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0 hover:bg-black/10"
+        >
+          PDF
+        </a>
         <button
           v-if="inv.status === 'open' || inv.status === 'partial'"
           class="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-500 text-white shrink-0"
