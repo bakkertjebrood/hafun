@@ -173,7 +173,7 @@ function renderPierLines() {
   if (!mapInstance || !L) return
 
   for (const pier of drawnPiers.value) {
-    const points = pier.points as number[][]
+    const points = (pier.points as number[][] | null) ?? []
     if (points.length < 2) continue
 
     const line = L.polyline(points, {
@@ -229,7 +229,7 @@ function renderVertexHandles() {
   if (!mapInstance || !L) return
 
   for (const pier of drawnPiers.value) {
-    const points = pier.points as number[][]
+    const points = (pier.points as number[][] | null) ?? []
     points.forEach((pt, idx) => {
       vertexHandles.push(createVertexHandle(pt, pier, 'main', idx))
     })
@@ -296,7 +296,7 @@ function redrawPierLinesOnly() {
   if (!mapInstance || !L) return
 
   for (const pier of drawnPiers.value) {
-    const points = pier.points as number[][]
+    const points = (pier.points as number[][] | null) ?? []
     if (points.length < 2) continue
     const line = L.polyline(points, {
       color: '#00A9A5', weight: 4, opacity: 0.8, dashArray: '8, 6'
@@ -644,8 +644,8 @@ function fitToData() {
   if (!mapInstance || !L) return
   const layers: any[] = []
   for (const pier of drawnPiers.value) {
-    const pts = pier.points as number[][]
-    if (pts?.length >= 2) layers.push(L.polyline(pts))
+    const pts = (pier.points as number[][] | null) ?? []
+    if (pts.length >= 2) layers.push(L.polyline(pts))
     const hp = pier.headPoints as number[][] | null
     if (hp && hp.length >= 2) layers.push(L.polyline(hp))
   }
@@ -681,8 +681,23 @@ async function onNoteAdded() {
 
 const counts = computed(() => mapData.value?.counts || {})
 const pierNames = computed<string[]>(() => {
-  if (!mapData.value?.berths) return []
-  return [...new Set(mapData.value.berths.map((b: any) => b.pier as string))].sort()
+  const fromPiers = drawnPiers.value.map((p: any) => p.name as string)
+  const fromBerths = (mapData.value?.berths || []).map((b: any) => b.pier as string)
+  return [...new Set([...fromPiers, ...fromBerths])].sort()
+})
+const berthCountByPier = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {}
+  for (const b of (mapData.value?.berths || [])) {
+    counts[b.pier] = (counts[b.pier] || 0) + 1
+  }
+  return counts
+})
+const passantenCountByPier = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {}
+  for (const b of (mapData.value?.berths || [])) {
+    if (b.isPassanten) counts[b.pier] = (counts[b.pier] || 0) + 1
+  }
+  return counts
 })
 const filteredBerths = computed(() => {
   if (!mapData.value?.berths) return []
@@ -693,6 +708,158 @@ const unpositionedCount = computed(() => {
   if (!mapData.value?.berths) return 0
   return mapData.value.berths.filter((b: any) => b.gpsLat == null || b.gpsLng == null).length
 })
+
+// ─── PIER/BERTH MANAGEMENT (edit mode) ───────────
+
+const showAddPier = ref(false)
+const addPierName = ref('')
+const addPierHasHead = ref(false)
+const addPierSaving = ref(false)
+
+const showAddBerth = ref<string | null>(null) // pier name or null
+const addBerthCount = ref(4)
+const addBerthLength = ref(10)
+const addBerthWidth = ref(3.5)
+const addBerthPassanten = ref(false)
+const addBerthSaving = ref(false)
+
+function nextPierName(): string {
+  const existing = new Set(pierNames.value.map(n => n.toUpperCase()))
+  for (let i = 0; i < 26; i++) {
+    const letter = String.fromCharCode(65 + i)
+    if (!existing.has(letter)) return letter
+  }
+  return `S${pierNames.value.length + 1}`
+}
+
+function openAddPier() {
+  addPierName.value = nextPierName()
+  addPierHasHead.value = false
+  showAddPier.value = true
+}
+
+async function createPier() {
+  const name = addPierName.value.trim()
+  if (!name || !marinaId.value) return
+  addPierSaving.value = true
+  try {
+    await $fetch('/api/piers', {
+      method: 'POST',
+      body: {
+        marinaId: marinaId.value,
+        name,
+        headPoints: addPierHasHead.value ? [] : null
+      }
+    })
+    showAddPier.value = false
+    await loadPiers()
+    await refreshMapData()
+    // Open add-berth panel for the new pier right away
+    openAddBerth(name)
+  }
+  catch (e: any) {
+    alert(e?.data?.message || 'Steiger toevoegen mislukt')
+  }
+  finally {
+    addPierSaving.value = false
+  }
+}
+
+function openAddBerth(pierName: string) {
+  showAddBerth.value = pierName
+  addBerthCount.value = 4
+  addBerthLength.value = 10
+  addBerthWidth.value = 3.5
+  addBerthPassanten.value = false
+}
+
+async function createBerths() {
+  const pier = showAddBerth.value
+  if (!pier) return
+  addBerthSaving.value = true
+  try {
+    await $fetch('/api/berths/bulk', {
+      method: 'POST',
+      body: {
+        pier,
+        count: addBerthCount.value,
+        length: addBerthLength.value,
+        width: addBerthWidth.value,
+        isPassanten: addBerthPassanten.value
+      }
+    })
+    showAddBerth.value = null
+    await refreshMapData()
+    // If pier is already drawn, position the new berths
+    const pierRec = drawnPiers.value.find((p: any) => p.name === pier)
+    if (pierRec && Array.isArray(pierRec.points) && pierRec.points.length >= 2) {
+      await $fetch('/api/piers/position-berths', {
+        method: 'POST',
+        body: { marinaId: marinaId.value, pierNames: [pier], onlyUnpositioned: true }
+      })
+      await refreshMapData()
+    }
+    clearMarkers()
+    addBerthMarkers()
+  }
+  catch (e: any) {
+    alert(e?.data?.message || 'Ligplaatsen toevoegen mislukt')
+  }
+  finally {
+    addBerthSaving.value = false
+  }
+}
+
+async function togglePierPassanten(pier: any) {
+  const current = passantenCountByPier.value[pier.name] || 0
+  const total = berthCountByPier.value[pier.name] || 0
+  const allPassanten = total > 0 && current === total
+  try {
+    await $fetch(`/api/piers/${pier.id}/passanten`, {
+      method: 'PUT',
+      body: { isPassanten: !allPassanten }
+    })
+    await refreshMapData()
+  }
+  catch (e: any) {
+    alert(e?.data?.message || 'Passanten wijzigen mislukt')
+  }
+}
+
+async function deletePierWithConfirm(pier: any) {
+  const count = berthCountByPier.value[pier.name] || 0
+  const msg = count > 0
+    ? `Steiger ${pier.name} heeft ${count} ligplaats${count === 1 ? '' : 'en'}. Alles verwijderen?`
+    : `Steiger ${pier.name} verwijderen?`
+  if (!confirm(msg)) return
+  try {
+    await $fetch(`/api/piers/${pier.id}${count > 0 ? '?cascade=1' : ''}`, { method: 'DELETE' })
+    await loadPiers()
+    await refreshMapData()
+    clearMarkers()
+    addBerthMarkers()
+  }
+  catch (e: any) {
+    alert(e?.data?.message || 'Verwijderen mislukt')
+  }
+}
+
+async function deleteBerthWithConfirm(berth: any) {
+  if (!confirm(`Ligplaats ${berth.code} verwijderen?`)) return
+  try {
+    await $fetch(`/api/berths/${berth.id}`, { method: 'DELETE' })
+    if (selectedBerth.value?.id === berth.id) {
+      slideOverOpen.value = false
+      selectedBerth.value = null
+    }
+    await refreshMapData()
+    clearMarkers()
+    addBerthMarkers()
+  }
+  catch (e: any) {
+    alert(e?.data?.message || 'Verwijderen mislukt')
+  }
+}
 </script>
 
 <template>
@@ -812,9 +979,9 @@ const unpositionedCount = computed(() => {
         <!-- Edit mode: pier drawing tools -->
         <template v-if="editMode">
           <div class="px-4 py-3 border-b border-black/[0.08]">
-            <div class="text-sm font-semibold text-[#0A1520]">Steigers tekenen</div>
+            <div class="text-sm font-semibold text-[#0A1520]">Steigers beheren</div>
             <div class="text-[11px] text-[#5A6A78] mt-0.5">
-              Teken lijn, ligplaatsen verschijnen automatisch aan beide zijden. Tik een ligplaats om links↔rechts te wisselen, versleep voor fijn-positioneren.
+              Voeg steigers en ligplaatsen toe, teken ze op de kaart, of pas bestaande aan.
             </div>
             <div
               v-if="unpositionedCount > 0"
@@ -824,64 +991,190 @@ const unpositionedCount = computed(() => {
             </div>
           </div>
 
-          <!-- Draw pier buttons -->
-          <div class="p-3 flex flex-col gap-2">
+          <!-- Add pier -->
+          <div class="p-3 border-b border-black/[0.08]">
             <button
-              v-for="pier in pierNames"
-              :key="pier"
-              class="flex items-center justify-between px-3 py-2 rounded-[10px] text-sm font-medium transition-all"
-              :class="drawnPiers.find(p => p.name === pier)
-                ? 'bg-primary-500/10 text-primary-500'
-                : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/5'"
-              @click="startDrawPier(pier)"
+              v-if="!showAddPier"
+              class="w-full py-2 rounded-[10px] border border-dashed border-primary-500/40 text-primary-500 text-sm font-semibold hover:bg-primary-500/5"
+              @click="openAddPier"
             >
-              <span>Steiger {{ pier }}</span>
-              <span v-if="drawnPiers.find(p => p.name === pier)" class="text-[10px]">
-                Herteken
-              </span>
-              <span v-else class="text-[10px]">Teken</span>
+              + Nieuwe steiger
             </button>
+            <div v-else class="flex flex-col gap-2">
+              <label class="flex items-center gap-2">
+                <span class="text-[11px] text-[#5A6A78] w-14">Naam</span>
+                <input
+                  v-model="addPierName"
+                  type="text"
+                  maxlength="8"
+                  class="flex-1 px-2 py-1.5 rounded-md border border-black/[0.12] bg-white text-sm font-semibold text-[#0A1520]"
+                >
+              </label>
+              <label class="flex items-center gap-1.5 text-xs text-[#2D3E4A] cursor-pointer">
+                <input v-model="addPierHasHead" type="checkbox" class="accent-primary-500">
+                T-kop (kopsteiger aan het eind)
+              </label>
+              <div class="flex gap-2">
+                <button
+                  class="flex-1 py-1.5 rounded-md bg-primary-500 text-white text-xs font-semibold disabled:opacity-50"
+                  :disabled="addPierSaving || !addPierName.trim()"
+                  @click="createPier"
+                >
+                  {{ addPierSaving ? 'Bezig...' : 'Maak aan' }}
+                </button>
+                <button
+                  class="px-3 py-1.5 rounded-md bg-[#F4F7F8] text-[#5A6A78] text-xs font-medium hover:bg-black/5"
+                  @click="showAddPier = false"
+                >
+                  Annuleer
+                </button>
+              </div>
+            </div>
           </div>
 
-          <!-- Drawn piers list -->
-          <div v-if="drawnPiers.length" class="px-3 pb-2">
+          <!-- All piers (drawn or not) -->
+          <div v-if="pierNames.length" class="px-3 py-2">
             <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-2">
-              Getekend ({{ drawnPiers.length }})
+              Steigers ({{ pierNames.length }})
             </div>
             <div
-              v-for="pier in drawnPiers"
-              :key="pier.id"
+              v-for="name in pierNames"
+              :key="name"
               class="py-2 border-t border-black/[0.05] first:border-t-0"
             >
               <div class="flex items-center justify-between text-xs mb-1.5">
                 <span class="font-medium text-[#0A1520]">
-                  Steiger {{ pier.name }}
-                  <span v-if="pier.headPoints" class="text-[#F59E0B]">+ T-kop</span>
+                  Steiger {{ name }}
+                  <span v-if="drawnPiers.find(p => p.name === name)?.headPoints" class="text-[#F59E0B]">+ T-kop</span>
+                  <span class="text-[10px] text-[#5A6A78] ml-1">
+                    {{ berthCountByPier[name] || 0 }} plaatsen
+                    <span v-if="(passantenCountByPier[name] || 0) > 0" class="text-primary-500">
+                      · {{ passantenCountByPier[name] }} passanten
+                    </span>
+                  </span>
                 </span>
-                <button class="text-red-400 hover:text-red-600 text-[10px]" @click="deletePier(pier.id)">
+                <button
+                  v-if="drawnPiers.find(p => p.name === name)"
+                  class="text-red-400 hover:text-red-600 text-[10px]"
+                  @click="deletePierWithConfirm(drawnPiers.find(p => p.name === name))"
+                >
                   Verwijder
                 </button>
               </div>
-              <div class="flex items-center gap-2">
+
+              <div class="flex flex-wrap items-center gap-1.5 mb-1.5">
+                <button
+                  class="px-2 py-1 rounded-md text-[10px] font-semibold transition-all"
+                  :class="drawnPiers.find(p => p.name === name)
+                    ? 'bg-primary-500/10 text-primary-500 hover:bg-primary-500/20'
+                    : 'bg-primary-500 text-white hover:bg-primary-600'"
+                  @click="startDrawPier(name)"
+                >
+                  {{ drawnPiers.find(p => p.name === name) ? 'Herteken' : 'Teken op kaart' }}
+                </button>
+                <button
+                  class="px-2 py-1 rounded-md bg-[#F4F7F8] text-[#0A1520] text-[10px] font-semibold hover:bg-black/5"
+                  @click="openAddBerth(name)"
+                >
+                  + Ligplaatsen
+                </button>
+                <button
+                  v-if="drawnPiers.find(p => p.name === name)"
+                  class="px-2 py-1 rounded-md text-[10px] font-semibold"
+                  :class="(berthCountByPier[name] || 0) > 0 && passantenCountByPier[name] === berthCountByPier[name]
+                    ? 'bg-primary-500/10 text-primary-500'
+                    : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/5'"
+                  :title="'Alle ligplaatsen als passanten markeren'"
+                  @click="togglePierPassanten(drawnPiers.find(p => p.name === name))"
+                >
+                  Passanten
+                </button>
+                <button
+                  v-if="drawnPiers.find(p => p.name === name)"
+                  class="px-2 py-1 rounded-md bg-[#F4F7F8] text-[#0A1520] text-[10px] font-semibold hover:bg-black/5"
+                  title="Wissel alle ligplaatsen tussen links en rechts"
+                  @click="flipAllSides(drawnPiers.find(p => p.name === name))"
+                >
+                  ⇄ Flip
+                </button>
+              </div>
+
+              <div
+                v-if="drawnPiers.find(p => p.name === name)"
+                class="flex items-center gap-2"
+              >
                 <span class="text-[10px] text-[#5A6A78] shrink-0">
-                  Breedte {{ (pier.berthOffset ?? 3.5).toFixed(1) }} m
+                  Breedte {{ (drawnPiers.find(p => p.name === name)?.berthOffset ?? 3.5).toFixed(1) }} m
                 </span>
                 <input
                   type="range"
                   min="1"
                   max="10"
                   step="0.5"
-                  :value="pier.berthOffset ?? 3.5"
+                  :value="drawnPiers.find(p => p.name === name)?.berthOffset ?? 3.5"
                   class="flex-1 accent-primary-500 h-6"
-                  @input="(e: any) => onOffsetInput(pier, parseFloat(e.target.value))"
+                  @input="(e: any) => onOffsetInput(drawnPiers.find(p => p.name === name), parseFloat(e.target.value))"
                 >
-                <button
-                  class="px-2 py-1 rounded-md bg-[#F4F7F8] text-[#0A1520] text-[10px] font-semibold hover:bg-black/5 shrink-0"
-                  title="Wissel alle ligplaatsen tussen links en rechts"
-                  @click="flipAllSides(pier)"
-                >
-                  ⇄
-                </button>
+              </div>
+
+              <!-- Inline add-berths form -->
+              <div
+                v-if="showAddBerth === name"
+                class="mt-2 p-2 rounded-md bg-[#FAFBFC] border border-black/[0.08] flex flex-col gap-1.5"
+              >
+                <div class="flex items-center gap-1.5">
+                  <label class="flex items-center gap-1 text-[10px]">
+                    <span class="text-[#5A6A78]">Aantal</span>
+                    <input
+                      v-model.number="addBerthCount"
+                      type="number"
+                      min="1"
+                      max="200"
+                      class="w-14 px-1.5 py-0.5 rounded border border-black/[0.12] bg-white text-xs text-center"
+                    >
+                  </label>
+                  <label class="flex items-center gap-1 text-[10px]">
+                    <input
+                      v-model.number="addBerthLength"
+                      type="number"
+                      min="2"
+                      max="60"
+                      step="0.5"
+                      class="w-12 px-1.5 py-0.5 rounded border border-black/[0.12] bg-white text-xs text-center"
+                    >
+                    <span class="text-[#5A6A78]">m</span>
+                  </label>
+                  <label class="flex items-center gap-1 text-[10px]">
+                    <input
+                      v-model.number="addBerthWidth"
+                      type="number"
+                      min="1"
+                      max="20"
+                      step="0.5"
+                      class="w-12 px-1.5 py-0.5 rounded border border-black/[0.12] bg-white text-xs text-center"
+                    >
+                    <span class="text-[#5A6A78]">br.</span>
+                  </label>
+                </div>
+                <label class="flex items-center gap-1 text-[10px] cursor-pointer">
+                  <input v-model="addBerthPassanten" type="checkbox" class="accent-primary-500">
+                  <span class="text-[#2D3E4A]">Passantenplaatsen</span>
+                </label>
+                <div class="flex gap-1.5">
+                  <button
+                    class="flex-1 py-1 rounded bg-primary-500 text-white text-[10px] font-semibold disabled:opacity-50"
+                    :disabled="addBerthSaving || addBerthCount < 1"
+                    @click="createBerths"
+                  >
+                    {{ addBerthSaving ? 'Bezig...' : `+ ${addBerthCount} ligplaatsen` }}
+                  </button>
+                  <button
+                    class="px-2 py-1 rounded bg-[#F4F7F8] text-[#5A6A78] text-[10px] hover:bg-black/5"
+                    @click="showAddBerth = null"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -930,9 +1223,12 @@ const unpositionedCount = computed(() => {
       v-if="selectedBerth"
       :berth="selectedBerth"
       :open="slideOverOpen"
+      :edit-mode="editMode"
       @close="slideOverOpen = false"
       @status-changed="onStatusChanged"
       @note-added="onNoteAdded"
+      @passanten-changed="onStatusChanged"
+      @delete-requested="deleteBerthWithConfirm(selectedBerth)"
     />
   </div>
 </template>

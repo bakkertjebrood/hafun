@@ -1,31 +1,41 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { getAuthUser } from '../../utils/auth'
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody(event)
+  const auth = getAuthUser(event)
+  if (!auth) throw createError({ statusCode: 401, message: 'Niet ingelogd' })
 
-  if (!body.marinaId || !body.name || !body.points?.length) {
-    throw createError({ statusCode: 400, message: 'marinaId, name en points zijn verplicht' })
+  const body = await readBody(event)
+  const marinaId = (body.marinaId as string) || auth.marinaId
+
+  if (!body.name) {
+    throw createError({ statusCode: 400, message: 'name is verplicht' })
+  }
+  if (marinaId !== auth.marinaId && auth.role !== 'ADMIN') {
+    throw createError({ statusCode: 403, message: 'Niet toegestaan' })
   }
 
+  const hasPoints = Array.isArray(body.points) && body.points.length >= 2
   const offset = typeof body.berthOffset === 'number' ? body.berthOffset : undefined
 
-  // Upsert: update if pier with same name exists
+  const updateData: Prisma.PierLineUpdateInput = {}
+  if (hasPoints) updateData.points = body.points
+  if (body.headPoints !== undefined) updateData.headPoints = body.headPoints ?? Prisma.JsonNull
+  if (offset !== undefined) updateData.berthOffset = offset
+
+  const createData: Prisma.PierLineUncheckedCreateInput = {
+    marinaId,
+    name: body.name,
+    points: hasPoints ? body.points : [],
+    headPoints: body.headPoints ?? Prisma.JsonNull
+  }
+  if (offset !== undefined) createData.berthOffset = offset
+
   const pier = await prisma.pierLine.upsert({
-    where: {
-      marinaId_name: { marinaId: body.marinaId, name: body.name }
-    },
-    update: {
-      points: body.points,
-      headPoints: body.headPoints || null,
-      ...(offset !== undefined && { berthOffset: offset })
-    },
-    create: {
-      marinaId: body.marinaId,
-      name: body.name,
-      points: body.points,
-      headPoints: body.headPoints || null,
-      ...(offset !== undefined && { berthOffset: offset })
-    }
+    where: { marinaId_name: { marinaId, name: body.name } },
+    update: updateData,
+    create: createData
   })
 
   return pier

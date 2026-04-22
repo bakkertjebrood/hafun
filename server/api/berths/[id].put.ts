@@ -20,7 +20,10 @@ export default defineEventHandler(async (event) => {
       ...(body.boatId !== undefined && { boatId: body.boatId || null }),
       ...(body.gpsLat !== undefined && { gpsLat: body.gpsLat }),
       ...(body.gpsLng !== undefined && { gpsLng: body.gpsLng }),
-      ...(body.side !== undefined && validSide && { side: side || null })
+      ...(body.side !== undefined && validSide && { side: side || null }),
+      ...(typeof body.isPassanten === 'boolean' && { isPassanten: body.isPassanten }),
+      ...(typeof body.length === 'number' && { length: body.length }),
+      ...(typeof body.width === 'number' && { width: body.width })
     },
     include: {
       customer: { select: { id: true, name: true } },

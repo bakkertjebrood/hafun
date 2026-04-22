@@ -75,7 +75,8 @@ export default defineEventHandler(async (event) => {
       marina: {
         id: user.marina.id,
         name: user.marina.name,
-        slug: user.marina.slug
+        slug: user.marina.slug,
+        setupComplete: user.marina.setupComplete
       }
     }
   }

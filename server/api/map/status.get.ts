@@ -22,6 +22,7 @@ export default defineEventHandler(async (event) => {
       length: true,
       width: true,
       status: true,
+      isPassanten: true,
       gpsLat: true,
       gpsLng: true,
       side: true,
