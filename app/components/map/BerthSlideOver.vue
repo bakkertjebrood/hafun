@@ -7,19 +7,32 @@ const props = defineProps<{
     length: number
     width: number
     status: string
+    isPassanten?: boolean
     customer?: { id: string; name: string; contractType?: string } | null
     boat?: { id: string; name: string; type?: string; length: number; width?: number } | null
     notes?: Array<{ id: string; text: string; createdAt: string; author: { firstName: string; lastName: string } }>
     bookings?: Array<{ id: string; dateFrom: string; dateTo: string; status: string; customer?: { name: string } | null; guest?: { name: string } | null }>
   }
   open: boolean
+  editMode?: boolean
 }>()
 
 const emit = defineEmits<{
   close: []
   statusChanged: [status: string]
   noteAdded: []
+  passantenChanged: [value: boolean]
+  deleteRequested: []
 }>()
+
+async function togglePassanten() {
+  const next = !props.berth.isPassanten
+  await $fetch(`/api/berths/${props.berth.id}`, {
+    method: 'PUT',
+    body: { isPassanten: next }
+  })
+  emit('passantenChanged', next)
+}
 
 const newNote = ref('')
 const savingNote = ref(false)
@@ -99,6 +112,12 @@ function formatDateTime(d: string) {
           </span>
           <span class="text-xs text-[#5A6A78]">{{ berth.length }}m × {{ berth.width }}m</span>
           <span class="text-xs text-[#5A6A78]">· Steiger {{ berth.pier }}</span>
+          <span
+            v-if="berth.isPassanten"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-500/10 text-primary-500 text-[10px] font-semibold"
+          >
+            Passant
+          </span>
         </div>
       </div>
 
@@ -194,13 +213,32 @@ function formatDateTime(d: string) {
       </div>
 
       <!-- Footer actions -->
-      <div class="px-5 py-4 border-t border-black/[0.08] flex gap-2">
-        <UButton color="primary" class="rounded-full flex-1" size="sm">
-          Boeking maken
-        </UButton>
-        <UButton color="neutral" variant="outline" class="rounded-full flex-1" size="sm">
-          Klant koppelen
-        </UButton>
+      <div class="px-5 py-4 border-t border-black/[0.08] flex flex-col gap-2">
+        <div v-if="editMode" class="flex gap-2">
+          <button
+            class="flex-1 py-2 rounded-full text-xs font-semibold transition-all"
+            :class="berth.isPassanten
+              ? 'bg-primary-500/10 text-primary-500 hover:bg-primary-500/20'
+              : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/5'"
+            @click="togglePassanten"
+          >
+            {{ berth.isPassanten ? '✓ Passantenplaats' : 'Markeer als passanten' }}
+          </button>
+          <button
+            class="px-4 py-2 rounded-full bg-red-500/10 text-red-500 text-xs font-semibold hover:bg-red-500/20"
+            @click="emit('deleteRequested')"
+          >
+            Verwijder
+          </button>
+        </div>
+        <div class="flex gap-2">
+          <UButton color="primary" class="rounded-full flex-1" size="sm">
+            Boeking maken
+          </UButton>
+          <UButton color="neutral" variant="outline" class="rounded-full flex-1" size="sm">
+            Klant koppelen
+          </UButton>
+        </div>
       </div>
     </div>
   </Transition>

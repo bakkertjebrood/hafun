@@ -19,6 +19,7 @@ model Marina {
   subscriptionPlan String?
   gpsLat           Float?
   gpsLng           Float?
+  setupComplete    Boolean  @default(false)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -41,7 +42,7 @@ model PierLine {
   id          String   @id @default(uuid())
   marinaId    String
   name        String   // "A", "B", "C" etc.
-  points      Json     // [[lat,lng], [lat,lng], ...] main line
+  points      Json?    // [[lat,lng], [lat,lng], ...] main line (null until drawn on map)
   headPoints  Json?    // [[lat,lng], [lat,lng]] T-head kopzijde
   berthOffset Float    @default(3.5)
   createdAt   DateTime @default(now())
@@ -89,20 +90,21 @@ enum BerthStatus {
 }
 
 model Berth {
-  id         String      @id @default(uuid())
-  marinaId   String
-  code       String
-  pier       String
-  length     Float
-  width      Float
-  status     BerthStatus @default(FREE)
-  gpsLat     Float?
-  gpsLng     Float?
-  side       String?     // "LEFT" | "RIGHT" | "HEAD" | null
-  customerId String?
-  boatId     String?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  id           String      @id @default(uuid())
+  marinaId     String
+  code         String
+  pier         String
+  length       Float
+  width        Float
+  status       BerthStatus @default(FREE)
+  isPassanten  Boolean     @default(false)
+  gpsLat       Float?
+  gpsLng       Float?
+  side         String?     // "LEFT" | "RIGHT" | "HEAD" | null
+  customerId   String?
+  boatId       String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   marina   Marina    @relation(fields: [marinaId], references: [id])
   customer Customer? @relation(fields: [customerId], references: [id])

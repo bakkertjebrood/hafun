@@ -98,7 +98,7 @@ export default defineEventHandler(async (event) => {
   let positioned = 0
 
   for (const pier of pierLines) {
-    const points = pier.points as number[][]
+    const points = (pier.points as number[][] | null) ?? []
     const headPoints = pier.headPoints as number[][] | null
     const pierBerths = berths.filter(b => b.pier === pier.name)
     if (!pierBerths.length || points.length < 2) continue

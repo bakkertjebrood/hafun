@@ -7,12 +7,13 @@ async function main() {
   // Create marina
   const marina = await prisma.marina.upsert({
     where: { slug: 'lands-end' },
-    update: {},
+    update: { setupComplete: true },
     create: {
       name: 'Jachthaven Lands End',
       slug: 'lands-end',
       gpsLat: 52.58038836,
       gpsLng: 5.75972931,
+      setupComplete: true,
       settings: {
         address: 'Ketelhaven',
         phone: '',

@@ -22,6 +22,9 @@ export default defineEventHandler(async (event) => {
   if (typeof body.berthOffset === 'number') {
     data.berthOffset = Math.max(0, Math.min(20, body.berthOffset))
   }
+  if (typeof body.name === 'string' && body.name.trim()) {
+    data.name = body.name.trim()
+  }
 
   if (!Object.keys(data).length) {
     throw createError({ statusCode: 400, message: 'geen wijzigingen opgegeven' })
