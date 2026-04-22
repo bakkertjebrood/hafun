@@ -9,7 +9,8 @@ const navigation = [
   { label: 'Reserveringen', icon: 'i-lucide-calendar-check', to: '/dashboard/bookings' },
   { label: 'Huurders', icon: 'i-lucide-users', to: '/dashboard/customers' },
   { label: 'Facturatie', icon: 'i-lucide-receipt', to: '/dashboard/financial' },
-  { label: 'Meldingen', icon: 'i-lucide-bell', to: '/dashboard/notifications' }
+  { label: 'Meldingen', icon: 'i-lucide-bell', to: '/dashboard/notifications' },
+  { label: 'Beheer', icon: 'i-lucide-settings', to: '/dashboard/settings' }
 ]
 
 // Bottom nav: most important items for mobile
