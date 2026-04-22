@@ -34,6 +34,7 @@ model Marina {
   pierLines  PierLine[]
   tariffs    Tariff[]
   facilities Facility[]
+  accounting AccountingIntegration?
 }
 
 // Pier geometry — drawn on the map
@@ -249,50 +250,41 @@ model Guest {
   @@index([marinaId])
 }
 
-model Invoice {
-  id         String        @id @default(uuid())
-  marinaId   String
-  customerId String?
-  guestId    String?
-  number     String
-  date       DateTime
-  dueDate    DateTime
-  total      Float
-  vat        Float
-  status     String        @default("open")
-  paidAmount Float         @default(0)
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+// Accounting integration config per marina (Moneybird, Exact, etc.)
+model AccountingIntegration {
+  id               String  @id @default(uuid())
+  marinaId         String  @unique
+  provider         String  // "moneybird", "exact", "visma"
+  apiToken         String
+  administrationId String?
+  settings         Json?
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  marina   Marina        @relation(fields: [marinaId], references: [id])
-  customer Customer?     @relation(fields: [customerId], references: [id])
-  lines    InvoiceLine[]
-  payments Payment[]
+  marina Marina @relation(fields: [marinaId], references: [id])
+}
+
+// Light invoice reference — points to external accounting system
+model Invoice {
+  id           String   @id @default(uuid())
+  marinaId     String
+  customerId   String?
+  externalId   String?  // ID in external system (Moneybird invoice ID)
+  externalUrl  String?  // Direct link to invoice in external system
+  number       String?
+  description  String?  // "Jaarplaats A01 — 2026"
+  total        Float
+  status       String   @default("draft") // draft, sent, paid, overdue
+  syncedAt     DateTime? // last sync with external system
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  marina   Marina    @relation(fields: [marinaId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
 
   @@unique([marinaId, number])
   @@index([marinaId])
-}
-
-model InvoiceLine {
-  id          String @id @default(uuid())
-  invoiceId   String
-  description String
-  quantity    Float  @default(1)
-  unitPrice   Float
-  vatRate     Float  @default(21)
-
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-}
-
-model Payment {
-  id        String   @id @default(uuid())
-  invoiceId String
-  amount    Float
-  method    String   @default("transfer")
-  date      DateTime @default(now())
-  note      String?
-
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 }
 
 model Note {

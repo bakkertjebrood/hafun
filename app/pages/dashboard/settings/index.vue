@@ -6,7 +6,8 @@ const marina = ref<any>(null)
 const users = ref<any[]>([])
 const piers = ref<any[]>([])
 const tariffs = ref<any[]>([])
-const activeTab = ref<'marina' | 'users' | 'piers' | 'tariffs'>('marina')
+const accountingConfig = ref<any>(null)
+const activeTab = ref<'marina' | 'users' | 'piers' | 'tariffs' | 'integrations'>('marina')
 const saving = ref(false)
 const marinaId = ref('')
 
@@ -36,7 +37,7 @@ const roleLabels: Record<string, string> = {
 onMounted(async () => {
   const discovered = await $fetch('/api/berths/discover') as any
   marinaId.value = discovered.marinaId
-  await Promise.all([fetchMarina(), fetchUsers(), fetchPiers(), fetchTariffs()])
+  await Promise.all([fetchMarina(), fetchUsers(), fetchPiers(), fetchTariffs(), fetchAccounting()])
   loading.value = false
 })
 
@@ -72,6 +73,38 @@ async function createTariff() {
 async function deleteTariff(id: string) {
   await $fetch(`/api/tariffs/${id}`, { method: 'DELETE' })
   await fetchTariffs()
+}
+
+// Accounting integration
+const accountingForm = ref({ provider: 'moneybird', apiToken: '', administrationId: '' })
+const accountingSaving = ref(false)
+const accountingTestResult = ref<string | null>(null)
+
+async function fetchAccounting() {
+  accountingConfig.value = await $fetch('/api/accounting/config')
+  if (accountingConfig.value?.integration) {
+    accountingForm.value.provider = accountingConfig.value.integration.provider
+    accountingForm.value.administrationId = accountingConfig.value.integration.administrationId || ''
+  }
+}
+
+async function saveAccounting() {
+  if (!accountingForm.value.apiToken || !accountingForm.value.administrationId) return
+  accountingSaving.value = true
+  accountingTestResult.value = null
+  try {
+    await $fetch('/api/accounting/config', {
+      method: 'POST',
+      body: accountingForm.value
+    })
+    accountingTestResult.value = 'Verbinding geslaagd!'
+    accountingForm.value.apiToken = ''
+    await fetchAccounting()
+  }
+  catch (e: any) {
+    accountingTestResult.value = e.data?.message || 'Verbinding mislukt'
+  }
+  finally { accountingSaving.value = false }
 }
 
 async function saveMarina() {
@@ -125,7 +158,8 @@ function formatDate(d: string) {
           { key: 'marina', label: 'Haven' },
           { key: 'users', label: 'Gebruikers' },
           { key: 'piers', label: 'Steigers' },
-          { key: 'tariffs', label: 'Tarieven' }
+          { key: 'tariffs', label: 'Tarieven' },
+          { key: 'integrations', label: 'Koppelingen' }
         ] as const)"
         :key="tab.key"
         class="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
@@ -370,6 +404,68 @@ function formatDate(d: string) {
         </div>
         <div v-if="!tariffs.length" class="px-5 py-8 text-center text-sm text-[#5A6A78]">
           Nog geen tarieven. Voeg er een toe om automatisch facturen te berekenen.
+        </div>
+      </div>
+    </div>
+
+    <!-- Integrations -->
+    <div v-if="activeTab === 'integrations'">
+      <div class="bg-white border border-black/[0.08] rounded-[14px] p-5">
+        <div class="text-sm font-semibold text-[#0A1520] mb-1">Boekhouding koppeling</div>
+        <div class="text-xs text-[#5A6A78] mb-5">Koppel je boekhoudsoftware om facturen direct te versturen.</div>
+
+        <!-- Current status -->
+        <div v-if="accountingConfig?.hasToken" class="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-[10px] mb-5">
+          <div class="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+            <UIcon name="i-lucide-check" class="size-4" />
+          </div>
+          <div>
+            <div class="text-sm font-semibold text-emerald-800 capitalize">{{ accountingConfig.integration?.provider }} verbonden</div>
+            <div class="text-xs text-emerald-600">Facturen worden naar je boekhouding gestuurd</div>
+          </div>
+        </div>
+
+        <!-- Config form -->
+        <div class="flex flex-col gap-3 max-w-lg">
+          <div>
+            <label class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1 block">Provider</label>
+            <select v-model="accountingForm.provider" class="w-full px-3 py-2.5 text-sm rounded-[10px] border border-black/[0.08] bg-[#F4F7F8]">
+              <option value="moneybird">Moneybird</option>
+              <option value="exact" disabled>Exact Online (binnenkort)</option>
+              <option value="visma" disabled>Visma eAccounting (binnenkort)</option>
+            </select>
+          </div>
+
+          <div v-if="accountingForm.provider === 'moneybird'">
+            <label class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1 block">
+              API Token
+              <a href="https://moneybird.com/user/applications/new" target="_blank" class="text-primary-500 normal-case tracking-normal">(ophalen)</a>
+            </label>
+            <input v-model="accountingForm.apiToken" type="password" placeholder="Plak je Moneybird API token"
+              class="w-full px-3 py-2.5 text-sm rounded-[10px] border border-black/[0.08] bg-[#F4F7F8]">
+          </div>
+
+          <div v-if="accountingForm.provider === 'moneybird'">
+            <label class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1 block">
+              Administratie ID
+              <span class="text-[#5A6A78]/60 normal-case tracking-normal">(staat in je Moneybird URL)</span>
+            </label>
+            <input v-model="accountingForm.administrationId" type="text" placeholder="123456789"
+              class="w-full px-3 py-2.5 text-sm rounded-[10px] border border-black/[0.08] bg-[#F4F7F8]">
+          </div>
+
+          <!-- Result message -->
+          <div v-if="accountingTestResult" class="text-sm font-medium" :class="accountingTestResult.includes('geslaagd') ? 'text-emerald-500' : 'text-red-500'">
+            {{ accountingTestResult }}
+          </div>
+
+          <button
+            class="px-6 py-2.5 rounded-full bg-primary-500 text-white text-sm font-semibold self-start disabled:opacity-50"
+            :disabled="accountingSaving || !accountingForm.apiToken"
+            @click="saveAccounting"
+          >
+            {{ accountingSaving ? 'Verbinden...' : 'Test & verbind' }}
+          </button>
         </div>
       </div>
     </div>
