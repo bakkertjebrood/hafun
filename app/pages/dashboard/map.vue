@@ -1312,10 +1312,7 @@ function rejectSuggestion(idx: number) {
 </script>
 
 <template>
-  <div
-    class="flex flex-col"
-    style="height: 100vh"
-  >
+  <div class="flex flex-col h-full">
     <!-- Topbar -->
     <div class="px-4 lg:px-6 py-2.5 lg:py-3 bg-white border-b border-black/[0.08] flex items-center justify-between shrink-0 gap-2">
       <div class="shrink-0">
@@ -2010,5 +2007,10 @@ function rejectSuggestion(idx: number) {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
+}
+@media (max-width: 1023px) {
+  .leaflet-top.leaflet-left {
+    top: 60px;
+  }
 }
 </style>
