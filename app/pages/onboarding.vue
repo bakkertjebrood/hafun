@@ -48,18 +48,20 @@ async function initMap() {
   mapInstance = L.map(mapContainer.value, {
     center: [52.3, 5.3], // Center of NL
     zoom: 8,
-    maxZoom: 19,
+    maxZoom: 22,
     doubleClickZoom: false
   })
 
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: '&copy; Esri',
-    maxZoom: 19
+    maxZoom: 22,
+    maxNativeZoom: 19
   }).addTo(mapInstance)
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
     subdomains: 'abcd',
-    maxZoom: 19,
+    maxZoom: 22,
+    maxNativeZoom: 19,
     pane: 'overlayPane'
   }).addTo(mapInstance)
 
