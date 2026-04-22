@@ -1,6 +1,21 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
+/* Form input readability */
+input, select, textarea {
+  color: #0A1520 !important;
+}
+input::placeholder, textarea::placeholder {
+  color: #8B9DA8 !important;
+  opacity: 1 !important;
+}
+select {
+  color: #0A1520 !important;
+}
+option {
+  color: #0A1520;
+}
+
 /* MapLibre marker z-index fix */
 .maplibregl-marker {
   z-index: 10 !important;
