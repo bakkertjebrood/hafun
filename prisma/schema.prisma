@@ -254,7 +254,7 @@ model Invoice {
   marinaId   String
   customerId String?
   guestId    String?
-  number     String        @unique
+  number     String
   date       DateTime
   dueDate    DateTime
   total      Float
@@ -269,6 +269,7 @@ model Invoice {
   lines    InvoiceLine[]
   payments Payment[]
 
+  @@unique([marinaId, number])
   @@index([marinaId])
 }
 
