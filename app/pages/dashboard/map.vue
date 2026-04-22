@@ -509,6 +509,112 @@ async function positionBerthsAlongPiers() {
   }
 }
 
+// ─── AI SATELLITE ANALYSE ──────────────────────
+
+const aiAnalyzing = ref(false)
+const aiResult = ref<any>(null)
+const showAiResult = ref(false)
+
+async function runAiAnalysis() {
+  if (!mapInstance) return
+  aiAnalyzing.value = true
+  error.value = null
+
+  try {
+    const html2canvas = (await import('html2canvas-pro')).default
+    const canvas = await html2canvas(mapInstance.getContainer(), {
+      useCORS: true, allowTaint: true, scale: 1
+    })
+    const imageBase64 = canvas.toDataURL('image/png')
+    const center = mapInstance.getCenter()
+    const marina = mapData.value?.marina
+
+    const result = await $fetch('/api/onboarding/analyze', {
+      method: 'POST',
+      body: {
+        imageBase64,
+        center: { lat: center.lat, lng: center.lng },
+        zoom: mapInstance.getZoom(),
+        marinaName: marina?.name || ''
+      }
+    })
+
+    aiResult.value = result
+    showAiResult.value = true
+  }
+  catch (e: any) {
+    alert('AI analyse mislukt: ' + (e.data?.message || e.message))
+  }
+  finally {
+    aiAnalyzing.value = false
+  }
+}
+
+async function applyAiResult() {
+  if (!aiResult.value?.piers?.length || !marinaId.value) return
+  positioningLoading.value = true
+
+  try {
+    for (const pier of aiResult.value.piers) {
+      if (!pier.startLat || !pier.endLat) continue
+
+      // Create/update pier line
+      const body: any = {
+        marinaId: marinaId.value,
+        name: pier.name,
+        points: [[pier.startLat, pier.startLng], [pier.endLat, pier.endLng]]
+      }
+      if (pier.hasHead && pier.headStartLat) {
+        body.headPoints = [[pier.headStartLat, pier.headStartLng], [pier.headEndLat, pier.headEndLng]]
+      }
+      await $fetch('/api/piers', { method: 'POST', body })
+
+      // Create berths if they don't exist for this pier
+      const existingBerths = (mapData.value?.berths || []).filter((b: any) => b.pier === pier.name)
+      const totalNeeded = (pier.leftBerths || 0) + (pier.rightBerths || 0)
+
+      if (existingBerths.length === 0 && totalNeeded > 0) {
+        await $fetch('/api/berths/bulk', {
+          method: 'POST',
+          body: {
+            marinaId: marinaId.value,
+            pier: pier.name,
+            count: totalNeeded,
+            length: pier.avgBerthLength || 10,
+            width: pier.avgBerthWidth || 3.5
+          }
+        })
+      }
+    }
+
+    // Position berths along the new piers
+    await $fetch('/api/piers/position-berths', {
+      method: 'POST',
+      body: { marinaId: marinaId.value }
+    })
+
+    // Refresh everything
+    await loadPiers()
+    await refreshMapData()
+    clearMarkers()
+    addBerthMarkers()
+    showAiResult.value = false
+
+    if (markers.length > 0) {
+      const group = L.featureGroup(markers)
+      mapInstance.fitBounds(group.getBounds().pad(0.1))
+    }
+  }
+  catch (e: any) {
+    alert('Toepassen mislukt: ' + (e.data?.message || e.message))
+  }
+  finally {
+    positioningLoading.value = false
+  }
+}
+
+const error = ref<string | null>(null)
+
 // ─── BERTH MARKERS ──────────────────────────────
 
 function clearMarkers() {
@@ -673,6 +779,8 @@ watch(slideOverOpen, async () => {
 
 async function onStatusChanged() {
   await refreshMapData()
+  clearMarkers()
+  addBerthMarkers()
   if (selectedBerth.value) {
     selectedBerth.value = await $fetch(`/api/berths/${selectedBerth.value.id}`)
   }
@@ -939,6 +1047,13 @@ async function deleteBerthWithConfirm(berth: any) {
         >
           {{ editMode ? 'Klaar' : 'Bewerken' }}
         </button>
+        <button
+          class="px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] transition-all shrink-0 disabled:opacity-50"
+          :disabled="aiAnalyzing"
+          @click="runAiAnalysis"
+        >
+          {{ aiAnalyzing ? 'AI analyseert...' : 'AI analyse' }}
+        </button>
 
         <!-- Status counts (hidden on small mobile) -->
         <div class="hidden sm:flex gap-1">
@@ -1177,45 +1292,45 @@ async function deleteBerthWithConfirm(berth: any) {
               <!-- Inline add-berths form -->
               <div
                 v-if="showAddBerth === name"
-                class="mt-2 p-2 rounded-md bg-[#FAFBFC] border border-black/[0.08] flex flex-col gap-1.5"
+                class="mt-2 p-3 rounded-[10px] bg-white border border-black/[0.12] flex flex-col gap-2.5"
               >
-                <div class="flex items-center gap-1.5">
-                  <label class="flex items-center gap-1 text-[10px]">
-                    <span class="text-[#5A6A78]">Aantal</span>
+                <div class="grid grid-cols-3 gap-2">
+                  <div>
+                    <label class="text-[9px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1 block">Aantal</label>
                     <input
                       v-model.number="addBerthCount"
                       type="number"
                       min="1"
                       max="200"
-                      class="w-14 px-1.5 py-0.5 rounded border border-black/[0.12] bg-white text-xs text-center"
+                      class="w-full px-2 py-1.5 rounded-[8px] border border-black/[0.12] bg-[#F4F7F8] text-sm text-[#0A1520] font-medium text-center focus:outline-none focus:border-primary-500"
                     >
-                  </label>
-                  <label class="flex items-center gap-1 text-[10px]">
+                  </div>
+                  <div>
+                    <label class="text-[9px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1 block">Lengte (m)</label>
                     <input
                       v-model.number="addBerthLength"
                       type="number"
                       min="2"
                       max="60"
                       step="0.5"
-                      class="w-12 px-1.5 py-0.5 rounded border border-black/[0.12] bg-white text-xs text-center"
+                      class="w-full px-2 py-1.5 rounded-[8px] border border-black/[0.12] bg-[#F4F7F8] text-sm text-[#0A1520] font-medium text-center focus:outline-none focus:border-primary-500"
                     >
-                    <span class="text-[#5A6A78]">m</span>
-                  </label>
-                  <label class="flex items-center gap-1 text-[10px]">
+                  </div>
+                  <div>
+                    <label class="text-[9px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1 block">Breedte (m)</label>
                     <input
                       v-model.number="addBerthWidth"
                       type="number"
                       min="1"
                       max="20"
                       step="0.5"
-                      class="w-12 px-1.5 py-0.5 rounded border border-black/[0.12] bg-white text-xs text-center"
+                      class="w-full px-2 py-1.5 rounded-[8px] border border-black/[0.12] bg-[#F4F7F8] text-sm text-[#0A1520] font-medium text-center focus:outline-none focus:border-primary-500"
                     >
-                    <span class="text-[#5A6A78]">br.</span>
-                  </label>
+                  </div>
                 </div>
-                <label class="flex items-center gap-1 text-[10px] cursor-pointer">
-                  <input v-model="addBerthPassanten" type="checkbox" class="accent-primary-500">
-                  <span class="text-[#2D3E4A]">Passantenplaatsen</span>
+                <label class="flex items-center gap-2 text-xs cursor-pointer">
+                  <input v-model="addBerthPassanten" type="checkbox" class="accent-primary-500 w-4 h-4">
+                  <span class="text-[#0A1520] font-medium">Passantenplaatsen</span>
                 </label>
                 <div class="flex gap-1.5">
                   <button
@@ -1300,6 +1415,62 @@ async function deleteBerthWithConfirm(berth: any) {
         @delete-requested="deleteBerthWithConfirm(selectedBerth)"
       />
     </div>
+
+    <!-- AI Result Modal -->
+    <Transition name="fade">
+      <div v-if="showAiResult && aiResult" class="fixed inset-0 z-[2000] flex items-center justify-center p-4" @click="showAiResult = false">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+        <div class="relative bg-white rounded-[20px] shadow-2xl max-w-xl w-full max-h-[80vh] overflow-y-auto p-6" @click.stop>
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-[#0A1520]">AI analyse resultaat</h2>
+            <button class="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center" @click="showAiResult = false">
+              <UIcon name="i-lucide-x" class="size-4" />
+            </button>
+          </div>
+
+          <p class="text-sm text-[#5A6A78] mb-4">
+            {{ aiResult.piers?.length || 0 }} steigers en ~{{ aiResult.totalBerths || 0 }} ligplaatsen gedetecteerd.
+          </p>
+
+          <div v-if="aiResult.notes" class="bg-primary-500/5 border border-primary-500/20 rounded-[10px] p-3 mb-4 text-xs text-[#0A1520]">
+            {{ aiResult.notes }}
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 mb-5">
+            <div
+              v-for="pier in aiResult.piers"
+              :key="pier.name"
+              class="bg-[#F4F7F8] rounded-[10px] p-3"
+            >
+              <div class="flex items-center gap-2 mb-1">
+                <span class="w-7 h-7 rounded-lg bg-primary-500/10 text-primary-500 flex items-center justify-center text-xs font-bold">{{ pier.name }}</span>
+                <span class="text-sm font-semibold text-[#0A1520]">{{ (pier.leftBerths || 0) + (pier.rightBerths || 0) }} plekken</span>
+              </div>
+              <div class="text-[11px] text-[#5A6A78]">
+                {{ pier.avgBerthLength || '?' }}m × {{ pier.avgBerthWidth || '?' }}m
+                <span v-if="pier.hasHead" class="text-amber-500 ml-1">T-kop</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex gap-2">
+            <button
+              class="flex-1 py-2.5 rounded-full bg-primary-500 text-white text-sm font-semibold disabled:opacity-50"
+              :disabled="positioningLoading"
+              @click="applyAiResult"
+            >
+              {{ positioningLoading ? 'Bezig...' : 'Toepassen op kaart' }}
+            </button>
+            <button
+              class="px-4 py-2.5 rounded-full bg-[#F4F7F8] text-[#5A6A78] text-sm font-semibold"
+              @click="showAiResult = false"
+            >
+              Annuleer
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 

@@ -24,6 +24,7 @@
     "@prisma/client": "^6.6.0",
     "@types/leaflet": "^1.9.21",
     "bcrypt": "^5.1.1",
+    "html2canvas-pro": "^2.0.2",
     "jsonwebtoken": "^9.0.2",
     "leaflet": "^1.9.4",
     "maplibre-gl": "^5.23.0",

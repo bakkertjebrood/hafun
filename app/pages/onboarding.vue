@@ -1,170 +1,281 @@
 <script setup lang="ts">
 definePageMeta({ layout: false })
 
-interface BerthRow {
-  length: number
-  width: number
-  count: number
-  isPassanten: boolean
-}
-
-interface PierDraft {
-  id: string
-  name: string
-  hasHead: boolean
-  allPassanten: boolean
-  berths: BerthRow[]
-}
-
 const { user, fetchMe } = useAuthUser()
 
-const step = ref(1)
+const step = ref(1) // 1: naam, 2: kaart + polygon, 3: AI resultaat, 4: klaar
 const submitting = ref(false)
 const error = ref<string | null>(null)
 
+// Step 1
 const marinaName = ref('')
-const gpsLat = ref<number | null>(null)
-const gpsLng = ref<number | null>(null)
 
-const piers = ref<PierDraft[]>([])
+// Step 2 - Map
+const mapContainer = ref<HTMLElement>()
+let mapInstance: any = null
+let L: any = null
+let polygon: any = null
+let drawnPolygon = ref<number[][] | null>(null)
+const drawingPoints = ref<number[][]>([])
+const isDrawing = ref(false)
+let previewLine: any = null
 
-const presets = [
-  { label: '6 m (sloep)', length: 6, width: 2.5 },
-  { label: '8 m', length: 8, width: 3 },
-  { label: '10 m', length: 10, width: 3.5 },
-  { label: '12 m', length: 12, width: 4 },
-  { label: '14 m', length: 14, width: 4.5 },
-  { label: '16 m (jacht)', length: 16, width: 5 }
-]
+// Step 3 - AI result
+const aiResult = ref<any>(null)
+const analyzing = ref(false)
 
 onMounted(async () => {
-  if (!user.value) await fetchMe()
-  if (!user.value) {
-    await navigateTo('/login')
-    return
+  if (user.value?.marina?.name) {
+    marinaName.value = user.value.marina.name
   }
-  if (user.value.marina.setupComplete) {
-    await navigateTo('/dashboard/map')
-    return
-  }
-  marinaName.value = user.value.marina.name
 })
 
-function nextLetter(): string {
-  const used = new Set(piers.value.map(p => p.name.toUpperCase()))
-  for (let i = 0; i < 26; i++) {
-    const letter = String.fromCharCode(65 + i)
-    if (!used.has(letter)) return letter
-  }
-  return `S${piers.value.length + 1}`
+// ─── STEP 2: MAP ────────────────────
+
+async function goToMap() {
+  if (!marinaName.value.trim()) return
+  step.value = 2
+  await nextTick()
+  await initMap()
 }
 
-function addPier(count: number = 1) {
-  for (let i = 0; i < count; i++) {
-    piers.value.push({
-      id: crypto.randomUUID(),
-      name: nextLetter(),
-      hasHead: false,
-      allPassanten: false,
-      berths: [{ length: 10, width: 3.5, count: 10, isPassanten: false }]
+async function initMap() {
+  if (!mapContainer.value) return
+  const leaflet = await import('leaflet')
+  await import('leaflet/dist/leaflet.css')
+  L = leaflet.default || leaflet
+
+  mapInstance = L.map(mapContainer.value, {
+    center: [52.3, 5.3], // Center of NL
+    zoom: 8,
+    maxZoom: 19,
+    doubleClickZoom: false
+  })
+
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '&copy; Esri',
+    maxZoom: 19
+  }).addTo(mapInstance)
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd',
+    maxZoom: 19,
+    pane: 'overlayPane'
+  }).addTo(mapInstance)
+
+  // Search box for finding the marina
+  addSearchControl()
+
+  mapInstance.on('click', onMapClick)
+  mapInstance.on('dblclick', onMapDblClick)
+}
+
+function addSearchControl() {
+  const searchDiv = document.createElement('div')
+  searchDiv.className = 'leaflet-top leaflet-left'
+  searchDiv.style.cssText = 'top: 10px; left: 60px; z-index: 1000;'
+  searchDiv.innerHTML = `
+    <div style="background: white; border-radius: 999px; padding: 8px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; gap: 8px; align-items: center; width: 320px;">
+      <input id="marina-search" type="text" placeholder="Zoek je haven (plaatsnaam)..." style="border: none; outline: none; flex: 1; font-size: 14px; font-family: inherit;">
+      <button id="marina-search-btn" style="background: #00A9A5; color: white; border: none; border-radius: 999px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;">Zoek</button>
+    </div>
+  `
+  mapInstance.getContainer().appendChild(searchDiv)
+
+  const searchInput = document.getElementById('marina-search') as HTMLInputElement
+  const searchBtn = document.getElementById('marina-search-btn')
+
+  async function doSearch() {
+    const q = searchInput?.value
+    if (!q) return
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q + ' nederland')}&limit=1`)
+      const data = await res.json()
+      if (data[0]) {
+        mapInstance.flyTo([parseFloat(data[0].lat), parseFloat(data[0].lon)], 17, { duration: 1.5 })
+      }
+    }
+    catch {}
+  }
+
+  searchBtn?.addEventListener('click', doSearch)
+  searchInput?.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Enter') doSearch()
+  })
+}
+
+function startDrawing() {
+  isDrawing.value = true
+  drawingPoints.value = []
+  if (polygon) { polygon.remove(); polygon = null }
+  drawnPolygon.value = null
+  mapInstance.getContainer().style.cursor = 'crosshair'
+}
+
+function onMapClick(e: any) {
+  if (!isDrawing.value) return
+
+  const point = [e.latlng.lat, e.latlng.lng]
+  drawingPoints.value.push(point)
+
+  // Update preview line
+  if (previewLine) previewLine.remove()
+  if (drawingPoints.value.length >= 2) {
+    previewLine = L.polyline([...drawingPoints.value, drawingPoints.value[0]], {
+      color: '#00A9A5', weight: 3, opacity: 0.8, dashArray: '6, 4'
+    }).addTo(mapInstance)
+  }
+
+  // Add vertex marker
+  L.circleMarker(point, {
+    radius: 5, fillColor: '#00A9A5', fillOpacity: 1,
+    color: 'white', weight: 2
+  }).addTo(mapInstance)
+}
+
+function onMapDblClick(e: any) {
+  if (!isDrawing.value || drawingPoints.value.length < 3) return
+  e.originalEvent?.preventDefault()
+  finishDrawing()
+}
+
+function finishDrawing() {
+  if (drawingPoints.value.length < 3) return
+
+  isDrawing.value = false
+  if (previewLine) { previewLine.remove(); previewLine = null }
+
+  polygon = L.polygon(drawingPoints.value, {
+    color: '#00A9A5', weight: 3, fillColor: '#00A9A5', fillOpacity: 0.15
+  }).addTo(mapInstance)
+
+  drawnPolygon.value = drawingPoints.value
+  mapInstance.getContainer().style.cursor = ''
+}
+
+// ─── STEP 3: AI ANALYSE ────────────
+
+async function analyzeWithAI() {
+  if (!drawnPolygon.value || !mapInstance) return
+  analyzing.value = true
+  error.value = null
+
+  try {
+    // Fit map to polygon for best screenshot
+    mapInstance.fitBounds(polygon.getBounds().pad(0.1))
+    await new Promise(r => setTimeout(r, 1500)) // Wait for tiles to load
+
+    // Capture map screenshot
+    const html2canvas = (await import('html2canvas-pro')).default
+    const canvas = await html2canvas(mapInstance.getContainer(), {
+      useCORS: true,
+      allowTaint: true,
+      scale: 1,
+      width: mapInstance.getContainer().offsetWidth,
+      height: mapInstance.getContainer().offsetHeight
     })
+
+    const imageBase64 = canvas.toDataURL('image/png')
+    const center = mapInstance.getCenter()
+
+    // Send to AI
+    const result = await $fetch('/api/onboarding/analyze', {
+      method: 'POST',
+      body: {
+        imageBase64,
+        polygon: drawnPolygon.value,
+        center: { lat: center.lat, lng: center.lng },
+        zoom: mapInstance.getZoom(),
+        marinaName: marinaName.value
+      }
+    })
+
+    aiResult.value = result
+    step.value = 3
+  }
+  catch (e: any) {
+    error.value = e.data?.message || 'AI analyse mislukt. Probeer opnieuw.'
+  }
+  finally {
+    analyzing.value = false
   }
 }
 
-function removePier(id: string) {
-  piers.value = piers.value.filter(p => p.id !== id)
-}
+// ─── STEP 4: CONFIRM & CREATE ──────
 
-function addBerthRow(pier: PierDraft) {
-  pier.berths.push({ length: 12, width: 4, count: 4, isPassanten: false })
-}
-
-function removeBerthRow(pier: PierDraft, idx: number) {
-  pier.berths.splice(idx, 1)
-}
-
-function totalBerthsFor(pier: PierDraft): number {
-  return pier.berths.reduce((sum, r) => sum + (r.count || 0), 0)
-}
-
-const totalPiers = computed(() => piers.value.length)
-const totalBerths = computed(() => piers.value.reduce((sum, p) => sum + totalBerthsFor(p), 0))
-const totalPassanten = computed(() => piers.value.reduce((sum, p) => {
-  return sum + p.berths.reduce((s, r) => {
-    const passanten = r.isPassanten || p.allPassanten
-    return s + (passanten ? (r.count || 0) : 0)
-  }, 0)
-}, 0))
-
-function canGoNext(): boolean {
-  if (step.value === 1) return marinaName.value.trim().length > 0
-  if (step.value === 2) return piers.value.length > 0 && piers.value.every(p => p.name.trim().length > 0)
-  if (step.value === 3) return piers.value.every(p => p.berths.length > 0 && p.berths.every(r => r.count > 0 && r.length > 0))
-  return true
-}
-
-function goNext() {
-  if (step.value === 2 && piers.value.length === 0) {
-    addPier(3)
-  }
-  step.value += 1
-}
-
-function goBack() {
-  if (step.value > 1) step.value -= 1
-}
-
-async function submit() {
-  if (submitting.value) return
+async function confirmSetup() {
+  if (!aiResult.value?.piers?.length) return
   submitting.value = true
   error.value = null
-  try {
-    await $fetch('/api/onboarding/setup', {
-      method: 'POST',
-      body: {
-        marinaName: marinaName.value.trim(),
-        gpsLat: gpsLat.value,
-        gpsLng: gpsLng.value,
-        piers: piers.value.map(p => ({
-          name: p.name.trim(),
-          hasHead: p.hasHead,
-          allPassanten: p.allPassanten,
-          berths: p.berths.map(r => ({
-            length: r.length,
-            width: r.width,
-            count: r.count,
-            isPassanten: r.isPassanten
-          }))
-        }))
-      }
-    })
-    await fetchMe()
-    await navigateTo('/dashboard/map?onboarded=1')
-  } catch (e: unknown) {
-    const err = e as { data?: { message?: string }, statusMessage?: string }
-    error.value = err?.data?.message || err?.statusMessage || 'Opslaan mislukt'
-  } finally {
-    submitting.value = false
-  }
-}
 
-async function skip() {
-  if (submitting.value) return
-  submitting.value = true
   try {
+    const center = mapInstance?.getCenter()
+
+    // Build piers + berths data from AI result
+    const piersData = aiResult.value.piers.map((pier: any) => {
+      const totalBerths = (pier.leftBerths || 0) + (pier.rightBerths || 0)
+      return {
+        name: pier.name,
+        hasHead: pier.hasHead || false,
+        headBerths: pier.headBerths || 0,
+        startLat: pier.startLat,
+        startLng: pier.startLng,
+        endLat: pier.endLat,
+        endLng: pier.endLng,
+        headStartLat: pier.headStartLat,
+        headStartLng: pier.headStartLng,
+        headEndLat: pier.headEndLat,
+        headEndLng: pier.headEndLng,
+        berths: [{
+          length: pier.avgBerthLength || 10,
+          width: pier.avgBerthWidth || 3.5,
+          count: totalBerths,
+          isPassanten: false
+        }]
+      }
+    })
+
     await $fetch('/api/onboarding/setup', {
       method: 'POST',
       body: {
-        marinaName: marinaName.value.trim() || (user.value?.marina.name ?? ''),
-        piers: []
+        marinaName: marinaName.value,
+        gpsLat: center?.lat || null,
+        gpsLng: center?.lng || null,
+        piers: piersData
       }
     })
+
+    // Position berths along the AI-detected pier lines
+    const discovered = await $fetch('/api/berths/discover') as any
+
+    // Save pier lines with AI coordinates
+    for (const pier of aiResult.value.piers) {
+      if (pier.startLat && pier.endLat) {
+        const body: any = {
+          marinaId: discovered.marinaId,
+          name: pier.name,
+          points: [[pier.startLat, pier.startLng], [pier.endLat, pier.endLng]]
+        }
+        if (pier.hasHead && pier.headStartLat) {
+          body.headPoints = [[pier.headStartLat, pier.headStartLng], [pier.headEndLat, pier.headEndLng]]
+        }
+        await $fetch('/api/piers', { method: 'POST', body })
+      }
+    }
+
+    // Auto-position berths
+    await $fetch('/api/piers/position-berths', {
+      method: 'POST',
+      body: { marinaId: discovered.marinaId }
+    })
+
     await fetchMe()
-    await navigateTo('/dashboard/map')
-  } catch (e: unknown) {
-    const err = e as { data?: { message?: string }, statusMessage?: string }
-    error.value = err?.data?.message || err?.statusMessage || 'Overslaan mislukt'
-  } finally {
+    step.value = 4
+  }
+  catch (e: any) {
+    error.value = e.data?.message || 'Setup mislukt'
+  }
+  finally {
     submitting.value = false
   }
 }
@@ -172,381 +283,203 @@ async function skip() {
 
 <template>
   <div class="min-h-[100dvh] bg-[#F4F7F8]">
-    <div class="max-w-[820px] mx-auto px-4 py-8 lg:py-12">
-      <div class="flex justify-center mb-6">
-        <NautarLogo :size="22" />
-      </div>
+    <!-- Step 1: Haven naam -->
+    <div v-if="step === 1" class="flex items-center justify-center min-h-[100dvh] p-4">
+      <div class="w-full max-w-md">
+        <div class="text-center mb-10">
+          <NautarLogo :size="28" class="mx-auto mb-6" />
+          <h1 class="text-3xl font-semibold text-[#0A1520] tracking-tight">Welkom terug.</h1>
+          <p class="text-sm text-[#5A6A78] mt-2">Laten we je haven instellen.</p>
+        </div>
 
-      <!-- Stepper -->
-      <div class="flex items-center justify-center gap-2 mb-6">
-        <div
-          v-for="s in 4"
-          :key="s"
-          class="h-1.5 rounded-full transition-all"
-          :class="[
-            s === step ? 'w-10 bg-primary-500' : s < step ? 'w-6 bg-primary-500/50' : 'w-6 bg-black/10'
-          ]"
-        />
-      </div>
-
-      <div class="bg-white border border-black/[0.08] rounded-[16px] p-6 lg:p-8">
-        <!-- Step 1: Haven -->
-        <template v-if="step === 1">
-          <h1 class="text-xl font-semibold tracking-tight text-[#0A1520] mb-1">
-            Welkom bij Nautar
-          </h1>
-          <p class="text-sm text-[#5A6A78] mb-6">
-            Laten we je haven in een paar stappen inrichten. Je kunt alles later nog wijzigen op de kaart.
-          </p>
-
-          <label class="flex flex-col gap-1.5 mb-4">
-            <span class="text-xs font-medium text-[#2D3E4A]">Naam van de haven</span>
-            <input
-              v-model="marinaName"
-              type="text"
-              placeholder="Bijv. Jachthaven De Zeemeeuw"
-              class="px-3.5 py-2.5 rounded-[10px] border border-black/[0.12] bg-white text-sm text-[#0A1520] focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-            >
-          </label>
-
-          <div class="grid grid-cols-2 gap-3 mb-2">
-            <label class="flex flex-col gap-1.5">
-              <span class="text-xs font-medium text-[#2D3E4A]">Breedtegraad (optioneel)</span>
-              <input
-                v-model.number="gpsLat"
-                type="number"
-                step="any"
-                placeholder="52.58038"
-                class="px-3.5 py-2.5 rounded-[10px] border border-black/[0.12] bg-white text-sm text-[#0A1520] focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-              >
-            </label>
-            <label class="flex flex-col gap-1.5">
-              <span class="text-xs font-medium text-[#2D3E4A]">Lengtegraad (optioneel)</span>
-              <input
-                v-model.number="gpsLng"
-                type="number"
-                step="any"
-                placeholder="5.75972"
-                class="px-3.5 py-2.5 rounded-[10px] border border-black/[0.12] bg-white text-sm text-[#0A1520] focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-              >
-            </label>
-          </div>
-          <p class="text-[11px] text-[#5A6A78]">
-            Coördinaten kun je later precies instellen op de kaart.
-          </p>
-        </template>
-
-        <!-- Step 2: Piers -->
-        <template v-else-if="step === 2">
-          <h1 class="text-xl font-semibold tracking-tight text-[#0A1520] mb-1">
-            Hoeveel steigers heb je?
-          </h1>
-          <p class="text-sm text-[#5A6A78] mb-5">
-            Voeg elke steiger toe. Een T-kop (kopsteiger) kun je per steiger aanvinken.
-          </p>
-
-          <div
-            v-if="piers.length === 0"
-            class="border-2 border-dashed border-black/[0.08] rounded-[12px] p-6 text-center"
+        <div class="bg-white rounded-[20px] border border-black/[0.08] p-6">
+          <label class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-2 block">Naam van je haven</label>
+          <input
+            v-model="marinaName"
+            type="text"
+            placeholder="bijv. Jachthaven Lands End"
+            class="w-full px-4 py-3 text-base rounded-[14px] border border-black/[0.08] bg-[#F4F7F8] focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+            @keydown.enter="goToMap"
           >
-            <div class="text-sm text-[#5A6A78] mb-3">
-              Nog geen steigers toegevoegd.
-            </div>
-            <div class="flex gap-2 justify-center flex-wrap">
-              <button
-                v-for="n in [1, 3, 5, 8]"
-                :key="n"
-                type="button"
-                class="px-3 py-1.5 rounded-full bg-[#F4F7F8] text-[#0A1520] text-sm font-medium hover:bg-black/5"
-                @click="addPier(n)"
-              >
-                {{ n }} {{ n === 1 ? 'steiger' : 'steigers' }}
-              </button>
-            </div>
-          </div>
-
-          <div
-            v-else
-            class="flex flex-col gap-2 mb-3"
-          >
-            <div
-              v-for="pier in piers"
-              :key="pier.id"
-              class="flex items-center gap-3 px-3 py-2.5 rounded-[10px] border border-black/[0.08] bg-[#FAFBFC]"
-            >
-              <span class="text-xs text-[#5A6A78] shrink-0">Naam</span>
-              <input
-                v-model="pier.name"
-                type="text"
-                maxlength="8"
-                class="w-16 px-2 py-1 rounded-md border border-black/[0.12] bg-white text-sm font-semibold text-[#0A1520]"
-              >
-              <label class="flex items-center gap-1.5 text-xs text-[#2D3E4A] cursor-pointer">
-                <input
-                  v-model="pier.hasHead"
-                  type="checkbox"
-                  class="accent-primary-500"
-                >
-                T-kop
-              </label>
-              <label class="flex items-center gap-1.5 text-xs text-[#2D3E4A] cursor-pointer">
-                <input
-                  v-model="pier.allPassanten"
-                  type="checkbox"
-                  class="accent-primary-500"
-                >
-                Passantensteiger
-              </label>
-              <div class="flex-1" />
-              <button
-                type="button"
-                class="text-red-400 hover:text-red-600 text-xs"
-                @click="removePier(pier.id)"
-              >
-                Verwijder
-              </button>
-            </div>
-          </div>
 
           <button
-            v-if="piers.length > 0"
-            type="button"
-            class="text-sm text-primary-500 font-medium hover:text-primary-600"
-            @click="addPier(1)"
+            class="w-full mt-4 py-3.5 rounded-full bg-primary-500 text-white text-sm font-semibold disabled:opacity-50"
+            :disabled="!marinaName.trim()"
+            @click="goToMap"
           >
-            + Nog een steiger
+            Volgende — zoek op de kaart →
           </button>
-        </template>
+        </div>
+      </div>
+    </div>
 
-        <!-- Step 3: Berths -->
-        <template v-else-if="step === 3">
-          <h1 class="text-xl font-semibold tracking-tight text-[#0A1520] mb-1">
-            Ligplaatsen per steiger
-          </h1>
-          <p class="text-sm text-[#5A6A78] mb-5">
-            Geef per steiger op hoeveel ligplaatsen er zijn en welke maten. Voeg meerdere maten toe als je mix hebt.
+    <!-- Step 2: Kaart + polygon tekenen -->
+    <div v-if="step === 2" class="h-[100dvh] flex flex-col">
+      <!-- Top bar -->
+      <div class="px-4 lg:px-6 py-3 bg-white/95 backdrop-blur-sm border-b border-black/[0.08] flex items-center justify-between shrink-0 z-[500]">
+        <div>
+          <div class="text-base font-semibold text-[#0A1520]">{{ marinaName }}</div>
+          <div class="text-xs text-[#5A6A78]">Zoom in op je haven en omcirkel het havengebied</div>
+        </div>
+        <div class="flex gap-2">
+          <button
+            v-if="!isDrawing && !drawnPolygon"
+            class="px-4 py-2 rounded-full bg-primary-500 text-white text-sm font-semibold"
+            @click="startDrawing"
+          >
+            Start tekenen
+          </button>
+          <button
+            v-if="isDrawing && drawingPoints.length >= 3"
+            class="px-4 py-2 rounded-full bg-primary-500 text-white text-sm font-semibold"
+            @click="finishDrawing"
+          >
+            Voltooi vorm
+          </button>
+          <button
+            v-if="isDrawing"
+            class="px-4 py-2 rounded-full bg-[#F4F7F8] text-[#5A6A78] text-sm font-semibold"
+            @click="isDrawing = false; drawingPoints = []; mapInstance.getContainer().style.cursor = ''"
+          >
+            Annuleer
+          </button>
+          <button
+            v-if="drawnPolygon && !analyzing"
+            class="px-4 py-2 rounded-full bg-primary-500 text-white text-sm font-semibold"
+            @click="analyzeWithAI"
+          >
+            Analyseer met AI →
+          </button>
+          <button
+            v-if="analyzing"
+            class="px-4 py-2 rounded-full bg-primary-500/50 text-white text-sm font-semibold"
+            disabled
+          >
+            AI analyseert...
+          </button>
+          <button
+            v-if="drawnPolygon && !analyzing"
+            class="px-4 py-2 rounded-full bg-[#F4F7F8] text-[#5A6A78] text-sm font-semibold"
+            @click="startDrawing"
+          >
+            Opnieuw tekenen
+          </button>
+        </div>
+      </div>
+
+      <!-- Drawing instructions -->
+      <div
+        v-if="isDrawing"
+        class="px-4 py-2 bg-primary-500 text-white text-center text-sm font-medium shrink-0"
+      >
+        Klik op de kaart om punten te plaatsen rondom je haven. Dubbelklik of klik "Voltooi" om af te ronden.
+        <span class="opacity-75 ml-2">({{ drawingPoints.length }} punten)</span>
+      </div>
+
+      <!-- Error -->
+      <div v-if="error" class="px-4 py-2 bg-red-500 text-white text-center text-sm shrink-0">
+        {{ error }}
+      </div>
+
+      <!-- Map -->
+      <div ref="mapContainer" class="flex-1" />
+    </div>
+
+    <!-- Step 3: AI resultaat bevestigen -->
+    <div v-if="step === 3 && aiResult" class="min-h-[100dvh] p-4 lg:p-8">
+      <div class="max-w-3xl mx-auto">
+        <div class="text-center mb-8">
+          <NautarLogo :size="22" class="mx-auto mb-4" />
+          <h1 class="text-2xl font-semibold text-[#0A1520] tracking-tight">AI analyse compleet</h1>
+          <p class="text-sm text-[#5A6A78] mt-1">
+            We hebben {{ aiResult.piers?.length || 0 }} steigers en ~{{ aiResult.totalBerths || 0 }} ligplaatsen gedetecteerd.
           </p>
+        </div>
 
-          <div class="flex flex-col gap-4">
-            <div
-              v-for="pier in piers"
-              :key="pier.id"
-              class="border border-black/[0.08] rounded-[12px] p-4"
-            >
-              <div class="flex items-center justify-between mb-3">
-                <div class="flex items-center gap-2">
-                  <span class="text-sm font-semibold text-[#0A1520]">Steiger {{ pier.name }}</span>
-                  <span
-                    v-if="pier.hasHead"
-                    class="text-[10px] text-[#F59E0B] bg-amber-500/10 px-1.5 py-0.5 rounded"
-                  >T-kop</span>
-                  <span
-                    v-if="pier.allPassanten"
-                    class="text-[10px] text-primary-500 bg-primary-500/10 px-1.5 py-0.5 rounded"
-                  >Passanten</span>
-                </div>
-                <span class="text-xs text-[#5A6A78]">{{ totalBerthsFor(pier) }} ligplaatsen</span>
+        <!-- AI notes -->
+        <div v-if="aiResult.notes" class="bg-primary-500/5 border border-primary-500/20 rounded-[14px] p-4 mb-6 text-sm text-[#0A1520]">
+          {{ aiResult.notes }}
+        </div>
+
+        <!-- Piers list -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
+          <div
+            v-for="pier in aiResult.piers"
+            :key="pier.name"
+            class="bg-white border border-black/[0.08] rounded-[14px] p-4"
+          >
+            <div class="flex items-center gap-2 mb-3">
+              <div class="w-10 h-10 rounded-[10px] bg-primary-500/10 text-primary-500 flex items-center justify-center text-sm font-bold">
+                {{ pier.name }}
               </div>
-
-              <div class="flex flex-col gap-2">
-                <div
-                  v-for="(row, idx) in pier.berths"
-                  :key="idx"
-                  class="flex items-center gap-2 flex-wrap"
-                >
-                  <label class="flex items-center gap-1.5">
-                    <span class="text-[11px] text-[#5A6A78]">Aantal</span>
-                    <input
-                      v-model.number="row.count"
-                      type="number"
-                      min="1"
-                      max="200"
-                      class="w-16 px-2 py-1 rounded-md border border-black/[0.12] bg-white text-sm text-center"
-                    >
-                  </label>
-                  <span class="text-[11px] text-[#5A6A78]">×</span>
-                  <label class="flex items-center gap-1.5">
-                    <input
-                      v-model.number="row.length"
-                      type="number"
-                      min="2"
-                      max="60"
-                      step="0.5"
-                      class="w-16 px-2 py-1 rounded-md border border-black/[0.12] bg-white text-sm text-center"
-                    >
-                    <span class="text-[11px] text-[#5A6A78]">m lang</span>
-                  </label>
-                  <label class="flex items-center gap-1.5">
-                    <input
-                      v-model.number="row.width"
-                      type="number"
-                      min="1"
-                      max="20"
-                      step="0.5"
-                      class="w-16 px-2 py-1 rounded-md border border-black/[0.12] bg-white text-sm text-center"
-                    >
-                    <span class="text-[11px] text-[#5A6A78]">m breed</span>
-                  </label>
-                  <label
-                    v-if="!pier.allPassanten"
-                    class="flex items-center gap-1 text-[11px] text-[#2D3E4A] cursor-pointer"
-                  >
-                    <input
-                      v-model="row.isPassanten"
-                      type="checkbox"
-                      class="accent-primary-500"
-                    >
-                    passanten
-                  </label>
-                  <div class="flex-1" />
-                  <button
-                    v-if="pier.berths.length > 1"
-                    type="button"
-                    class="text-red-400 hover:text-red-600 text-[11px]"
-                    @click="removeBerthRow(pier, idx)"
-                  >
-                    ✕
-                  </button>
+              <div>
+                <div class="text-sm font-semibold text-[#0A1520]">Steiger {{ pier.name }}</div>
+                <div class="text-xs text-[#5A6A78]">
+                  {{ (pier.leftBerths || 0) + (pier.rightBerths || 0) }} ligplaatsen
+                  <span v-if="pier.hasHead">+ {{ pier.headBerths || 0 }} kop</span>
                 </div>
-
-                <div class="flex items-center gap-1.5 flex-wrap pt-1">
-                  <span class="text-[10px] text-[#5A6A78]">Snel toevoegen:</span>
-                  <button
-                    v-for="p in presets"
-                    :key="p.label"
-                    type="button"
-                    class="px-2 py-0.5 rounded-md bg-[#F4F7F8] text-[#2D3E4A] text-[10px] font-medium hover:bg-black/5"
-                    @click="pier.berths.push({ length: p.length, width: p.width, count: 4, isPassanten: false })"
-                  >
-                    {{ p.label }}
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  class="text-xs text-primary-500 font-medium hover:text-primary-600 text-left mt-1"
-                  @click="addBerthRow(pier)"
-                >
-                  + Rij toevoegen
-                </button>
               </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 text-xs text-[#5A6A78]">
+              <div>Links: {{ pier.leftBerths || 0 }}</div>
+              <div>Rechts: {{ pier.rightBerths || 0 }}</div>
+              <div>Lengte: ~{{ pier.avgBerthLength || '?' }}m</div>
+              <div>Breedte: ~{{ pier.avgBerthWidth || '?' }}m</div>
+            </div>
+
+            <div v-if="pier.hasHead" class="mt-2 flex items-center gap-1">
+              <span class="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-amber-500/10 text-amber-500">T-steiger</span>
+              <span class="text-[10px] text-[#5A6A78]">{{ pier.headBerths || 0 }} kopplaatsen</span>
             </div>
           </div>
-        </template>
+        </div>
 
-        <!-- Step 4: Summary -->
-        <template v-else-if="step === 4">
-          <h1 class="text-xl font-semibold tracking-tight text-[#0A1520] mb-1">
-            Samenvatting
-          </h1>
-          <p class="text-sm text-[#5A6A78] mb-5">
-            Controleer je keuzes. Hierna kun je de steigers op de kaart tekenen.
-          </p>
-
-          <div class="grid grid-cols-3 gap-3 mb-5">
-            <div class="bg-[#FAFBFC] border border-black/[0.08] rounded-[10px] p-3">
-              <div class="text-[10px] uppercase tracking-widest text-[#5A6A78]">
-                Steigers
-              </div>
-              <div class="text-2xl font-semibold text-[#0A1520]">
-                {{ totalPiers }}
-              </div>
-            </div>
-            <div class="bg-[#FAFBFC] border border-black/[0.08] rounded-[10px] p-3">
-              <div class="text-[10px] uppercase tracking-widest text-[#5A6A78]">
-                Ligplaatsen
-              </div>
-              <div class="text-2xl font-semibold text-[#0A1520]">
-                {{ totalBerths }}
-              </div>
-            </div>
-            <div class="bg-[#FAFBFC] border border-black/[0.08] rounded-[10px] p-3">
-              <div class="text-[10px] uppercase tracking-widest text-[#5A6A78]">
-                Passanten
-              </div>
-              <div class="text-2xl font-semibold text-primary-500">
-                {{ totalPassanten }}
-              </div>
-            </div>
-          </div>
-
-          <div class="flex flex-col gap-2">
-            <div
-              v-for="pier in piers"
-              :key="pier.id"
-              class="flex items-center justify-between px-3 py-2 rounded-[10px] bg-[#FAFBFC] border border-black/[0.08]"
-            >
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-semibold text-[#0A1520]">Steiger {{ pier.name }}</span>
-                <span
-                  v-if="pier.hasHead"
-                  class="text-[10px] text-[#F59E0B]"
-                >T-kop</span>
-                <span
-                  v-if="pier.allPassanten"
-                  class="text-[10px] text-primary-500"
-                >Passanten</span>
-              </div>
-              <span class="text-xs text-[#5A6A78]">
-                {{ totalBerthsFor(pier) }} ligplaatsen
-                <span class="text-[10px]">
-                  ({{ pier.berths.map(r => `${r.count}× ${r.length}m`).join(', ') }})
-                </span>
-              </span>
-            </div>
-          </div>
-        </template>
-
-        <div
-          v-if="error"
-          class="mt-5 text-sm text-red-600 bg-red-500/10 border border-red-500/20 rounded-[10px] px-3 py-2"
-        >
+        <!-- Error -->
+        <div v-if="error" class="bg-red-50 border border-red-200 rounded-[14px] p-4 mb-4 text-sm text-red-600">
           {{ error }}
         </div>
 
-        <!-- Footer nav -->
-        <div class="flex items-center justify-between mt-7 pt-5 border-t border-black/[0.08]">
+        <!-- Actions -->
+        <div class="flex gap-3 justify-center">
           <button
-            v-if="step > 1"
-            type="button"
-            class="text-sm text-[#5A6A78] hover:text-[#0A1520]"
-            @click="goBack"
+            class="px-6 py-3 rounded-full bg-[#F4F7F8] text-[#5A6A78] text-sm font-semibold"
+            @click="step = 2"
           >
-            ← Terug
+            ← Opnieuw analyseren
           </button>
           <button
-            v-else
-            type="button"
-            class="text-sm text-[#5A6A78] hover:text-[#0A1520] disabled:opacity-50"
+            class="px-8 py-3 rounded-full bg-primary-500 text-white text-sm font-semibold disabled:opacity-50"
             :disabled="submitting"
-            @click="skip"
+            @click="confirmSetup"
           >
-            Overslaan
+            {{ submitting ? 'Haven wordt aangemaakt...' : 'Bevestig en maak haven aan →' }}
           </button>
-
-          <div class="flex items-center gap-3">
-            <span class="text-[11px] text-[#5A6A78]">Stap {{ step }} van 4</span>
-            <button
-              v-if="step < 4"
-              type="button"
-              class="h-10 px-5 rounded-[10px] bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600 disabled:opacity-50"
-              :disabled="!canGoNext()"
-              @click="goNext"
-            >
-              Volgende
-            </button>
-            <button
-              v-else
-              type="button"
-              class="h-10 px-5 rounded-[10px] bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600 disabled:opacity-50"
-              :disabled="submitting"
-              @click="submit"
-            >
-              {{ submitting ? 'Bezig...' : 'Afronden & naar kaart' }}
-            </button>
-          </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Step 4: Klaar! -->
+    <div v-if="step === 4" class="flex items-center justify-center min-h-[100dvh] p-4">
+      <div class="text-center max-w-md">
+        <div class="w-20 h-20 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto mb-6">
+          <UIcon name="i-lucide-check" class="size-10" />
+        </div>
+        <h1 class="text-3xl font-semibold text-[#0A1520] tracking-tight mb-2">Haven aangemaakt!</h1>
+        <p class="text-sm text-[#5A6A78] mb-8">
+          {{ marinaName }} is klaar. Je kunt nu de steigers verfijnen op de kaart en beginnen met het beheer.
+        </p>
+        <NuxtLink
+          to="/dashboard/map"
+          class="inline-block px-8 py-3.5 rounded-full bg-primary-500 text-white text-sm font-semibold"
+        >
+          Ga naar de kaart →
+        </NuxtLink>
       </div>
     </div>
   </div>
 </template>
+
+<style>
+.leaflet-container { z-index: 1; }
+</style>
