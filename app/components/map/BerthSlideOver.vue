@@ -92,7 +92,7 @@ function formatDateTime(d: string) {
   <Transition name="slide">
     <div
       v-if="open"
-      class="fixed inset-y-0 right-0 w-full sm:w-[420px] bg-white shadow-2xl z-50 flex flex-col border-l border-black/[0.08]"
+      class="fixed inset-0 z-50 shadow-2xl bg-white flex flex-col border-l border-black/[0.08] lg:static lg:inset-auto lg:z-auto lg:shadow-none lg:w-[420px] lg:shrink-0 lg:h-full"
     >
       <!-- Header -->
       <div class="px-5 pt-5 pb-4 border-b border-black/[0.08]">
@@ -243,11 +243,11 @@ function formatDateTime(d: string) {
     </div>
   </Transition>
 
-  <!-- Backdrop -->
+  <!-- Backdrop (only on mobile; on desktop the panel sits next to the map) -->
   <Transition name="fade">
     <div
       v-if="open"
-      class="fixed inset-0 bg-black/20 z-40"
+      class="fixed inset-0 bg-black/20 z-40 lg:hidden"
       @click="emit('close')"
     />
   </Transition>
