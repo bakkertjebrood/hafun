@@ -157,13 +157,13 @@ function initMap() {
   mapInstance = L.map(mapContainer.value, { center, zoom: 17, maxZoom: 22 })
 
   const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    attribution: '&copy; Esri, Maxar, Earthstar Geographics', maxZoom: 22, maxNativeZoom: 19
+    attribution: '&copy; Esri, Maxar, Earthstar Geographics', maxZoom: 22, maxNativeZoom: 22
   })
   const labels = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
-    subdomains: 'abcd', maxZoom: 22, maxNativeZoom: 19, pane: 'overlayPane'
+    subdomains: 'abcd', maxZoom: 22, maxNativeZoom: 20, pane: 'overlayPane'
   })
   const street = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxZoom: 22, maxNativeZoom: 19
+    attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxZoom: 22, maxNativeZoom: 20
   })
 
   satellite.addTo(mapInstance)
@@ -799,7 +799,7 @@ function fitToData() {
   }
   if (layers.length) {
     const group = L.featureGroup(layers)
-    mapInstance.fitBounds(group.getBounds().pad(0.15), { maxZoom: 19 }) // auto-fit stops at native tile zoom; users can still zoom in further manually
+    mapInstance.fitBounds(group.getBounds().pad(0.15), { maxZoom: 20 })
   }
 }
 

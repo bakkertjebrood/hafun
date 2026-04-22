@@ -55,13 +55,13 @@ async function initMap() {
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: '&copy; Esri',
     maxZoom: 22,
-    maxNativeZoom: 19
+    maxNativeZoom: 22
   }).addTo(mapInstance)
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
     subdomains: 'abcd',
     maxZoom: 22,
-    maxNativeZoom: 19,
+    maxNativeZoom: 20,
     pane: 'overlayPane'
   }).addTo(mapInstance)
 
