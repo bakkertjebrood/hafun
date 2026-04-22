@@ -4,6 +4,7 @@ definePageMeta({ layout: 'dashboard' })
 const { user } = useAuthUser()
 const loading = ref(true)
 const stats = ref<any>(null)
+const showCheckin = ref(false)
 
 const greeting = computed(() => {
   const name = user.value?.firstName || user.value?.email?.split('@')[0] || ''
@@ -83,11 +84,9 @@ const todayIndex = 7 // today is always index 7 in the 14-day window
             Facturen
           </UButton>
         </NuxtLink>
-        <NuxtLink to="/dashboard/bookings">
-          <UButton color="primary" class="rounded-full" size="sm">
-            + Passant inchecken
-          </UButton>
-        </NuxtLink>
+        <UButton color="primary" class="rounded-full" size="sm" @click="showCheckin = true">
+          + Passant inchecken
+        </UButton>
       </div>
     </div>
 
@@ -227,5 +226,12 @@ const todayIndex = 7 // today is always index 7 in the 14-day window
         </div>
       </div>
     </template>
+
+    <!-- Check-in wizard -->
+    <BookingCheckinWizard
+      v-if="showCheckin"
+      @close="showCheckin = false"
+      @done="showCheckin = false; loading = true; $fetch('/api/dashboard/stats').then(d => { stats = d; loading = false })"
+    />
   </div>
 </template>

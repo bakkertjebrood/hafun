@@ -23,7 +23,43 @@ const emit = defineEmits<{
   noteAdded: []
   passantenChanged: [value: boolean]
   deleteRequested: []
+  checkinRequested: []
+  linkCustomer: []
 }>()
+
+// Active booking for this berth
+const activeBooking = computed(() => {
+  return props.berth.bookings?.find(b => b.status === 'reserved' || b.status === 'checked_in')
+})
+
+const checkingIn = ref(false)
+const checkingOut = ref(false)
+
+async function checkin() {
+  if (!activeBooking.value) return
+  checkingIn.value = true
+  try {
+    await $fetch(`/api/bookings/${activeBooking.value.id}`, {
+      method: 'PUT',
+      body: { status: 'checked_in' }
+    })
+    await changeStatus('OCCUPIED')
+  }
+  finally { checkingIn.value = false }
+}
+
+async function checkout() {
+  if (!activeBooking.value) return
+  checkingOut.value = true
+  try {
+    await $fetch(`/api/bookings/${activeBooking.value.id}`, {
+      method: 'PUT',
+      body: { status: 'checked_out' }
+    })
+    await changeStatus('FREE')
+  }
+  finally { checkingOut.value = false }
+}
 
 async function togglePassanten() {
   const next = !props.berth.isPassanten
@@ -231,11 +267,30 @@ function formatDateTime(d: string) {
             Verwijder
           </button>
         </div>
+        <!-- Check-in / Check-out for active booking -->
+        <div v-if="activeBooking" class="flex gap-2">
+          <button
+            v-if="activeBooking.status === 'reserved'"
+            class="flex-1 py-2.5 rounded-full bg-emerald-500 text-white text-sm font-semibold disabled:opacity-50"
+            :disabled="checkingIn"
+            @click="checkin"
+          >
+            {{ checkingIn ? 'Bezig...' : 'Check-in' }}
+          </button>
+          <button
+            v-if="activeBooking.status === 'checked_in'"
+            class="flex-1 py-2.5 rounded-full bg-[#5A6A78] text-white text-sm font-semibold disabled:opacity-50"
+            :disabled="checkingOut"
+            @click="checkout"
+          >
+            {{ checkingOut ? 'Bezig...' : 'Check-out' }}
+          </button>
+        </div>
         <div class="flex gap-2">
-          <UButton color="primary" class="rounded-full flex-1" size="sm">
-            Boeking maken
+          <UButton color="primary" class="rounded-full flex-1" size="sm" @click="emit('checkinRequested')">
+            + Boeking
           </UButton>
-          <UButton color="neutral" variant="outline" class="rounded-full flex-1" size="sm">
+          <UButton color="neutral" variant="outline" class="rounded-full flex-1" size="sm" @click="emit('linkCustomer')">
             Klant koppelen
           </UButton>
         </div>
