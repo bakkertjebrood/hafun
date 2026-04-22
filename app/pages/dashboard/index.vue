@@ -1,9 +1,10 @@
 <script setup lang="ts">
-definePageMeta({
-  layout: 'dashboard'
-})
+definePageMeta({ layout: 'dashboard' })
 
 const { user } = useAuthUser()
+const loading = ref(true)
+const stats = ref<any>(null)
+
 const greeting = computed(() => {
   const name = user.value?.firstName || user.value?.email?.split('@')[0] || ''
   return name ? `Dag ${name}.` : 'Welkom.'
@@ -14,26 +15,30 @@ const dayNames = ['Zondag', 'Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrij
 const monthNames = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december']
 const dateString = `${dayNames[today.getDay()]} ${today.getDate()} ${monthNames[today.getMonth()]}`
 
-const kpis = [
-  { label: 'Bezetting vandaag', value: '74%', change: '+6%', positive: true },
-  { label: 'Check-ins', value: '18', change: '4 wachten', neutral: true },
-  { label: 'Openstaand', value: '\u20AC 2.480', change: '3 facturen', neutral: true },
-  { label: 'Passanten deze week', value: '34', change: '+12', positive: true }
-]
+const dayLabels = (() => {
+  const labels = []
+  const dayShort = ['Zo', 'Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za']
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(today)
+    d.setDate(d.getDate() - 7 + i)
+    labels.push(dayShort[d.getDay()])
+  }
+  return labels
+})()
 
-const schedule = [
-  { time: '10:40', name: 'Linde \u2014 SY Goedewind', kind: 'Aankomst', slot: 'B-12', status: 'onderweg' },
-  { time: '11:15', name: 'Pieter van Dam', kind: 'Check-in', slot: 'A-07', status: 'bevestigd' },
-  { time: '13:00', name: 'MY Saltwater', kind: 'Vertrek', slot: 'C-21', status: 'ingepland' },
-  { time: '15:30', name: 'Family Hendriks', kind: 'Aankomst', slot: 'B-04', status: 'onderweg' },
-  { time: '17:00', name: 'Tech Inspectie', kind: 'Intern', slot: 'A-19', status: 'ingepland' }
-]
+onMounted(async () => {
+  try {
+    stats.value = await $fetch('/api/dashboard/stats')
+  }
+  catch (e) {
+    console.error('Failed to load dashboard stats:', e)
+  }
+  loading.value = false
+})
 
-const notifications = [
-  { title: '\u20AC 340 betaling ontvangen', sub: 'van Pieter van Dam \u00B7 B-07', color: '#10B981' },
-  { title: 'Waterpeil laag \u2014 steiger C', sub: 'sensor \u00B7 2 min geleden', color: '#F59E0B' },
-  { title: 'Nieuwe reserveringsaanvraag', sub: '3 nachten \u00B7 SY Nordwind', color: '#00A9A5' }
-]
+function formatCurrency(n: number) {
+  return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n)
+}
 
 function statusClasses(status: string) {
   switch (status) {
@@ -42,6 +47,22 @@ function statusClasses(status: string) {
     default: return 'bg-black/5 text-[#5A6A78]'
   }
 }
+
+const kpis = computed(() => {
+  if (!stats.value) return []
+  const k = stats.value.kpis
+  return [
+    { label: 'Bezetting vandaag', value: `${k.occupancy}%`, change: `${k.occupancy > 50 ? '+' : ''}${k.occupancy - 50}% vs gem.`, positive: k.occupancy > 50 },
+    { label: 'Check-ins vandaag', value: String(k.checkIns), change: k.checkIns > 0 ? `${k.checkIns} verwacht` : 'Geen vandaag', neutral: true },
+    { label: 'Openstaand', value: formatCurrency(k.outstanding), change: `${k.openInvoices} facturen`, neutral: true },
+    { label: 'Passanten deze week', value: String(k.passanten), change: k.passanten > 0 ? 'deze week' : 'Geen passanten', neutral: true }
+  ]
+})
+
+const schedule = computed(() => stats.value?.schedule || [])
+const notifications = computed(() => stats.value?.notifications || [])
+const occupancyChart = computed(() => stats.value?.occupancyChart || Array(14).fill(0))
+const todayIndex = 7 // today is always index 7 in the 14-day window
 </script>
 
 <template>
@@ -50,164 +71,161 @@ function statusClasses(status: string) {
     <div class="flex items-end justify-between mb-5 lg:mb-7">
       <div>
         <div class="text-xs text-[#5A6A78] mb-1 tracking-wide">
-          {{ dateString }}
+          {{ dateString }} · {{ user?.marina?.name || '' }}
         </div>
         <h1 class="text-2xl lg:text-4xl font-semibold tracking-tight text-[#0A1520] leading-tight">
           {{ greeting }}
         </h1>
       </div>
       <div class="hidden sm:flex gap-2.5">
-        <UButton color="neutral" variant="outline" class="rounded-full" size="sm">
-          Exporteer
-        </UButton>
-        <UButton color="primary" class="rounded-full" size="sm">
-          + Reservering
-        </UButton>
+        <NuxtLink to="/dashboard/financial">
+          <UButton color="neutral" variant="outline" class="rounded-full" size="sm">
+            Facturen
+          </UButton>
+        </NuxtLink>
+        <NuxtLink to="/dashboard/bookings">
+          <UButton color="primary" class="rounded-full" size="sm">
+            + Passant inchecken
+          </UButton>
+        </NuxtLink>
       </div>
     </div>
 
-    <!-- KPI row -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 lg:gap-3.5 mb-4 lg:mb-5">
-      <div
-        v-for="kpi in kpis"
-        :key="kpi.label"
-        class="bg-white border border-black/[0.08] rounded-[14px] p-4"
-      >
-        <div class="text-xs text-[#5A6A78] font-medium">{{ kpi.label }}</div>
-        <div class="text-3xl font-semibold tracking-tight mt-1.5 leading-none text-[#0A1520]">
-          {{ kpi.value }}
-        </div>
+    <!-- Loading -->
+    <div v-if="loading" class="text-sm text-[#5A6A78] py-8 text-center">Dashboard laden...</div>
+
+    <template v-else>
+      <!-- KPI row -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 lg:gap-3.5 mb-4 lg:mb-5">
         <div
-          class="mt-2 text-xs font-medium"
-          :class="kpi.positive ? 'text-emerald-500' : 'text-[#5A6A78]'"
+          v-for="kpi in kpis"
+          :key="kpi.label"
+          class="bg-white border border-black/[0.08] rounded-[14px] p-4"
         >
-          {{ kpi.change }}
-        </div>
-      </div>
-    </div>
-
-    <!-- Two column -->
-    <div class="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-2.5 lg:gap-3.5">
-      <!-- Marina map placeholder -->
-      <div class="bg-white border border-black/[0.08] rounded-[14px] p-5">
-        <div class="flex items-center justify-between mb-3.5">
-          <div class="text-sm font-semibold text-[#0A1520] tracking-tight">Ligplaatskaart — Steiger B</div>
-          <div class="flex gap-2">
-            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-black/[0.08] text-xs font-medium">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500" />Vrij 42
-            </span>
-            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-black/[0.08] text-xs font-medium">
-              <span class="w-1.5 h-1.5 rounded-full bg-amber-500" />Reserved 8
-            </span>
-            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-black/[0.08] text-xs font-medium">
-              <span class="w-1.5 h-1.5 rounded-full bg-red-500" />Bezet 18
-            </span>
+          <div class="text-xs text-[#5A6A78] font-medium">{{ kpi.label }}</div>
+          <div class="text-2xl lg:text-3xl font-semibold tracking-tight mt-1.5 leading-none text-[#0A1520]">
+            {{ kpi.value }}
           </div>
-        </div>
-        <!-- Simplified marina visualization -->
-        <div class="bg-[#E4EEF0] rounded-[10px] p-4 relative overflow-hidden">
-          <div v-for="(row, ri) in ['A', 'B', 'C']" :key="row" class="flex items-center gap-1 mb-3 last:mb-0">
-            <div class="w-6 font-mono text-[10px] font-semibold text-[#5A6A78]">{{ row }}</div>
-            <div class="flex-1 h-1.5 bg-[#0A1520]/80 rounded relative">
-              <div class="absolute inset-0 flex justify-between px-1.5 -translate-y-1/2">
-                <div
-                  v-for="i in 14"
-                  :key="i"
-                  class="w-2.5 h-4 rounded-sm shadow-sm"
-                  :class="[
-                    (ri * 31 + i * 7) % 10 < 2 ? 'bg-red-500' :
-                    (ri * 31 + i * 7) % 10 < 4 ? 'bg-amber-500' :
-                    'bg-emerald-500'
-                  ]"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Today schedule -->
-      <div class="bg-white border border-black/[0.08] rounded-[14px] p-5">
-        <div class="text-sm font-semibold text-[#0A1520] tracking-tight mb-3.5">Vandaag</div>
-        <div class="flex flex-col">
           <div
-            v-for="(row, i) in schedule"
-            :key="i"
-            class="grid grid-cols-[52px_1fr_auto] gap-3 py-3 items-center"
-            :class="i < schedule.length - 1 ? 'border-b border-black/[0.08]' : ''"
+            class="mt-2 text-xs font-medium"
+            :class="kpi.positive ? 'text-emerald-500' : 'text-[#5A6A78]'"
           >
-            <div class="font-mono text-[13px] font-semibold text-[#0A1520]">{{ row.time }}</div>
-            <div>
-              <div class="text-[13px] font-semibold text-[#0A1520] tracking-tight">{{ row.name }}</div>
-              <div class="text-xs text-[#5A6A78] mt-0.5">{{ row.kind }} · {{ row.slot }}</div>
-            </div>
-            <span
-              class="px-2.5 py-1 rounded-full text-[11px] font-semibold capitalize tracking-wide"
-              :class="statusClasses(row.status)"
-            >
-              {{ row.status }}
-            </span>
+            {{ kpi.change }}
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Bottom row -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-2.5 lg:gap-3.5 mt-2.5 lg:mt-3.5">
-      <!-- Occupancy chart -->
-      <div class="bg-white border border-black/[0.08] rounded-[14px] p-5">
-        <div class="text-sm font-semibold text-[#0A1520] tracking-tight mb-3.5">Bezetting — 14 dagen</div>
-        <div class="flex items-end gap-1 h-[150px]">
-          <div
-            v-for="(val, i) in [47, 60, 55, 70, 62, 78, 85, 74, 52, 65, 58, 72, 80, 88]"
-            :key="i"
-            class="flex-1 flex flex-col items-center gap-1.5"
-          >
+      <!-- Two column -->
+      <div class="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-2.5 lg:gap-3.5">
+        <!-- Quick link to map -->
+        <NuxtLink to="/dashboard/map" class="bg-white border border-black/[0.08] rounded-[14px] p-5 hover:border-primary-500/30 transition-colors">
+          <div class="flex items-center justify-between mb-3">
+            <div class="text-sm font-semibold text-[#0A1520] tracking-tight">Ligplaatskaart</div>
+            <span class="text-xs text-primary-500 font-medium">Bekijk kaart →</span>
+          </div>
+          <div class="bg-[#E4EEF0] rounded-[10px] p-4 text-center text-sm text-[#5A6A78]">
+            <UIcon name="i-lucide-map" class="size-8 text-primary-500/40 mx-auto mb-2" />
+            Klik om de interactieve havenkaart te openen
+          </div>
+        </NuxtLink>
+
+        <!-- Today schedule -->
+        <div class="bg-white border border-black/[0.08] rounded-[14px] p-5">
+          <div class="flex items-center justify-between mb-3.5">
+            <div class="text-sm font-semibold text-[#0A1520] tracking-tight">Vandaag</div>
+            <NuxtLink to="/dashboard/bookings" class="text-xs text-primary-500 font-medium">Alle boekingen →</NuxtLink>
+          </div>
+          <div v-if="schedule.length" class="flex flex-col">
             <div
-              class="w-full rounded-[6px] relative"
-              :class="i === 7 ? 'bg-primary-500' : 'bg-primary-500/30'"
-              :style="{ height: `${val * 1.5}px` }"
+              v-for="(row, i) in schedule"
+              :key="row.id"
+              class="grid grid-cols-[48px_1fr_auto] gap-3 py-3 items-center"
+              :class="i < schedule.length - 1 ? 'border-b border-black/[0.08]' : ''"
+            >
+              <div class="font-mono text-[13px] font-semibold text-[#0A1520]">{{ row.time }}</div>
+              <div>
+                <div class="text-[13px] font-semibold text-[#0A1520] tracking-tight">{{ row.name }}</div>
+                <div class="text-xs text-[#5A6A78] mt-0.5">{{ row.kind }} · {{ row.slot }}</div>
+              </div>
+              <span
+                class="px-2.5 py-1 rounded-full text-[11px] font-semibold capitalize tracking-wide"
+                :class="statusClasses(row.status)"
+              >
+                {{ row.status }}
+              </span>
+            </div>
+          </div>
+          <div v-else class="py-6 text-center text-sm text-[#5A6A78]">
+            Geen boekingen vandaag
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom row -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-2.5 lg:gap-3.5 mt-2.5 lg:mt-3.5">
+        <!-- Occupancy chart -->
+        <div class="bg-white border border-black/[0.08] rounded-[14px] p-5">
+          <div class="text-sm font-semibold text-[#0A1520] tracking-tight mb-3.5">Bezetting — 14 dagen</div>
+          <div class="flex items-end gap-1 h-[150px]">
+            <div
+              v-for="(val, i) in occupancyChart"
+              :key="i"
+              class="flex-1 flex flex-col items-center gap-1.5"
             >
               <div
-                v-if="i === 7"
-                class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 text-[11px] font-semibold text-[#0A1520] whitespace-nowrap"
+                class="w-full rounded-[6px] relative"
+                :class="i === todayIndex ? 'bg-primary-500' : 'bg-primary-500/30'"
+                :style="{ height: `${Math.max(val * 1.5, 4)}px` }"
               >
-                {{ val }}%
+                <div
+                  v-if="i === todayIndex"
+                  class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 text-[11px] font-semibold text-[#0A1520] whitespace-nowrap"
+                >
+                  {{ val }}%
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        <div class="flex gap-1 mt-2 font-mono text-[10px] text-[#5A6A78]">
-          <div
-            v-for="(d, i) in ['Ma','Di','Wo','Do','Vr','Za','Zo','Ma','Di','Wo','Do','Vr','Za','Zo']"
-            :key="i"
-            class="flex-1 text-center"
-            :class="i === 7 ? 'font-bold text-[#0A1520]' : ''"
-          >
-            {{ d }}
+          <div class="flex gap-1 mt-2 font-mono text-[10px] text-[#5A6A78]">
+            <div
+              v-for="(d, i) in dayLabels"
+              :key="i"
+              class="flex-1 text-center"
+              :class="i === todayIndex ? 'font-bold text-[#0A1520]' : ''"
+            >
+              {{ d }}
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Notifications -->
-      <div class="bg-white border border-black/[0.08] rounded-[14px] p-5">
-        <div class="text-sm font-semibold text-[#0A1520] tracking-tight mb-3.5">Meldingen</div>
-        <div
-          v-for="(notif, i) in notifications"
-          :key="i"
-          class="flex gap-3 py-3"
-          :class="i < notifications.length - 1 ? 'border-b border-black/[0.08]' : ''"
-        >
-          <span
-            class="w-2 h-2 rounded-full mt-1.5 shrink-0"
-            :style="{ background: notif.color }"
-          />
-          <div>
-            <div class="text-[13px] font-semibold text-[#0A1520]">{{ notif.title }}</div>
-            <div class="text-xs text-[#5A6A78] mt-0.5">{{ notif.sub }}</div>
+        <!-- Notifications -->
+        <div class="bg-white border border-black/[0.08] rounded-[14px] p-5">
+          <div class="flex items-center justify-between mb-3.5">
+            <div class="text-sm font-semibold text-[#0A1520] tracking-tight">Meldingen</div>
+            <NuxtLink to="/dashboard/notifications" class="text-xs text-primary-500 font-medium">Alle →</NuxtLink>
+          </div>
+          <div v-if="notifications.length">
+            <div
+              v-for="(notif, i) in notifications"
+              :key="notif.id"
+              class="flex gap-3 py-3"
+              :class="i < notifications.length - 1 ? 'border-b border-black/[0.08]' : ''"
+            >
+              <span
+                class="w-2 h-2 rounded-full mt-1.5 shrink-0"
+                :style="{ background: notif.color }"
+              />
+              <div>
+                <div class="text-[13px] font-semibold text-[#0A1520]">{{ notif.title }}</div>
+                <div class="text-xs text-[#5A6A78] mt-0.5">{{ notif.sub }}</div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="py-6 text-center text-sm text-[#5A6A78]">
+            Geen meldingen
           </div>
         </div>
       </div>
-    </div>
+    </template>
   </div>
 </template>
