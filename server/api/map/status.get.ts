@@ -24,6 +24,7 @@ export default defineEventHandler(async (event) => {
       status: true,
       gpsLat: true,
       gpsLng: true,
+      side: true,
       customer: { select: { name: true } },
       boat: { select: { name: true } }
     },

@@ -7,16 +7,29 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event)
-  if (!body.points || !Array.isArray(body.points) || body.points.length < 2) {
-    throw createError({ statusCode: 400, message: 'points moet minimaal 2 punten bevatten' })
+
+  const data: Record<string, unknown> = {}
+
+  if (Array.isArray(body.points)) {
+    if (body.points.length < 2) {
+      throw createError({ statusCode: 400, message: 'points moet minimaal 2 punten bevatten' })
+    }
+    data.points = body.points
+  }
+  if (body.headPoints !== undefined) {
+    data.headPoints = body.headPoints ?? null
+  }
+  if (typeof body.berthOffset === 'number') {
+    data.berthOffset = Math.max(0, Math.min(20, body.berthOffset))
+  }
+
+  if (!Object.keys(data).length) {
+    throw createError({ statusCode: 400, message: 'geen wijzigingen opgegeven' })
   }
 
   const pier = await prisma.pierLine.update({
     where: { id },
-    data: {
-      points: body.points,
-      headPoints: body.headPoints ?? null
-    }
+    data
   })
 
   return pier

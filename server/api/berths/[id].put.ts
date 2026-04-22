@@ -9,6 +9,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Ligplaats niet gevonden' })
   }
 
+  const side = body.side
+  const validSide = side === null || side === 'LEFT' || side === 'RIGHT' || side === 'HEAD'
+
   const updated = await prisma.berth.update({
     where: { id },
     data: {
@@ -16,7 +19,8 @@ export default defineEventHandler(async (event) => {
       ...(body.customerId !== undefined && { customerId: body.customerId || null }),
       ...(body.boatId !== undefined && { boatId: body.boatId || null }),
       ...(body.gpsLat !== undefined && { gpsLat: body.gpsLat }),
-      ...(body.gpsLng !== undefined && { gpsLng: body.gpsLng })
+      ...(body.gpsLng !== undefined && { gpsLng: body.gpsLng }),
+      ...(body.side !== undefined && validSide && { side: side || null })
     },
     include: {
       customer: { select: { id: true, name: true } },
