@@ -37,6 +37,39 @@ const statusLabels: Record<string, string> = {
   STORAGE: 'Stalling', TEMPORARY: 'Tijdelijk', EMPTY: 'Leeg', RELOCATED: 'Verplaatst'
 }
 
+// Facility catalog: type → label, emoji marker glyph, brand color
+interface FacilityDef { label: string, glyph: string, color: string }
+const FACILITY_CATALOG: Record<string, FacilityDef> = {
+  SANITAIR: { label: 'Sanitair', glyph: '🚻', color: '#0EA5E9' },
+  KANTINE: { label: 'Kantine', glyph: '🍴', color: '#F97316' },
+  PARKEREN: { label: 'Parkeren', glyph: 'P', color: '#3B82F6' },
+  HAVENMEESTER: { label: 'Havenmeester', glyph: '⚓', color: '#0A1520' },
+  TANKSTATION: { label: 'Brandstof', glyph: '⛽', color: '#DC2626' },
+  AFVAL: { label: 'Afval', glyph: '🗑', color: '#6B7280' },
+  KRAAN: { label: 'Bootkraan', glyph: '🏗', color: '#D97706' },
+  WERKPLAATS: { label: 'Werkplaats', glyph: '🔧', color: '#78716C' },
+  WINKEL: { label: 'Winkel', glyph: '🛒', color: '#14B8A6' },
+  TERRAS: { label: 'Terras', glyph: '☕', color: '#B45309' },
+  SPEELTUIN: { label: 'Speeltuin', glyph: '🎪', color: '#EC4899' },
+  WATERPUNT: { label: 'Water', glyph: '💧', color: '#0284C7' },
+  STROOMPUNT: { label: 'Stroom', glyph: '⚡', color: '#EAB308' },
+  WIFI: { label: 'WiFi', glyph: '📶', color: '#8B5CF6' },
+  EHBO: { label: 'EHBO', glyph: '✚', color: '#EF4444' },
+  HELLING: { label: 'Helling', glyph: '🚤', color: '#2563EB' },
+  TOEGANG: { label: 'Toegang', glyph: '🚪', color: '#4B5563' },
+  OVERIG: { label: 'Overig', glyph: '📍', color: '#64748B' }
+}
+const FACILITY_TYPES = Object.keys(FACILITY_CATALOG)
+
+// Facility state
+const facilities = ref<any[]>([])
+const facilityLayers: any[] = []
+const placingFacilityType = ref<string | null>(null)
+const suggestLoading = ref(false)
+const suggestions = ref<any[]>([])
+const suggestionLayers: any[] = []
+const suggestNotes = ref<string | null>(null)
+
 // Bearing (0 = north, 90 = east) from A to B
 function bearingOf(a: number[], b: number[]): number {
   const φ1 = a[0]! * Math.PI / 180
@@ -63,14 +96,14 @@ onMounted(async () => {
     const discovered = await $fetch('/api/berths/discover') as any
     marinaId.value = discovered.marinaId
     mapData.value = await $fetch('/api/map/status', { query: { marinaId: marinaId.value } })
-  }
-  catch (e) {
+  } catch (e) {
     console.error('Could not discover marina:', e)
   }
 
   await nextTick()
   initMap()
   await loadPiers()
+  await loadFacilities()
   fitToData()
   loading.value = false
 
@@ -86,6 +119,11 @@ onBeforeUnmount(() => {
 })
 
 function onKeyDown(e: KeyboardEvent) {
+  if (placingFacilityType.value && e.key === 'Escape') {
+    e.preventDefault()
+    cancelPlacingFacility()
+    return
+  }
   if (drawMode.value === 'off') return
   if (e.key === 'Escape') {
     e.preventDefault()
@@ -130,7 +168,7 @@ function initMap() {
 
   satellite.addTo(mapInstance)
   labels.addTo(mapInstance)
-  L.control.layers({ 'Satelliet': satellite, 'Kaart': street }, { 'Labels': labels }, { position: 'topright' }).addTo(mapInstance)
+  L.control.layers({ Satelliet: satellite, Kaart: street }, { Labels: labels }, { position: 'topright' }).addTo(mapInstance)
 
   mapInstance.on('click', onMapClick)
   mapInstance.on('dblclick', onMapDblClick)
@@ -148,8 +186,7 @@ function onMapMouseMove(e: any) {
   let preview: number[][] | null = null
   if (drawMode.value === 'main' && drawPoints.value.length >= 1) {
     preview = [drawPoints.value[drawPoints.value.length - 1]!, cursor]
-  }
-  else if (drawMode.value === 'head' && drawHeadPoints.value.length === 1) {
+  } else if (drawMode.value === 'head' && drawHeadPoints.value.length === 1) {
     preview = [drawHeadPoints.value[0]!, cursor]
   }
   if (drawPreviewLine) { drawPreviewLine.remove(); drawPreviewLine = null }
@@ -281,8 +318,7 @@ function createVertexHandle(point: number[], pier: any, kind: 'main' | 'head', i
       await refreshMapData()
       clearMarkers()
       addBerthMarkers()
-    }
-    catch (err) {
+    } catch (err) {
       console.error('Vertex update failed:', err)
     }
   })
@@ -323,6 +359,12 @@ function startDrawPier(name: string) {
 }
 
 function onMapClick(e: any) {
+  if (placingFacilityType.value) {
+    const type = placingFacilityType.value
+    placeFacilityAt(type, e.latlng.lat, e.latlng.lng)
+    // Keep placing mode on so multiple facilities of the same type can be placed quickly — cancel via picker or Esc
+    return
+  }
   if (drawMode.value === 'off') return
 
   const point = [e.latlng.lat, e.latlng.lng]
@@ -330,8 +372,7 @@ function onMapClick(e: any) {
   if (drawMode.value === 'main') {
     drawPoints.value.push(point)
     updateDrawPreview()
-  }
-  else if (drawMode.value === 'head') {
+  } else if (drawMode.value === 'head') {
     drawHeadPoints.value.push(point)
     updateDrawPreview()
     // T-head is just 2 points (start + end)
@@ -357,8 +398,7 @@ function undoLastPoint() {
   if (drawMode.value === 'main' && drawPoints.value.length > 0) {
     drawPoints.value = drawPoints.value.slice(0, -1)
     updateDrawPreview()
-  }
-  else if (drawMode.value === 'head' && drawHeadPoints.value.length > 0) {
+  } else if (drawMode.value === 'head' && drawHeadPoints.value.length > 0) {
     drawHeadPoints.value = drawHeadPoints.value.slice(0, -1)
     updateDrawPreview()
   }
@@ -415,8 +455,7 @@ async function finishDrawPier() {
     await refreshMapData()
     clearMarkers()
     addBerthMarkers()
-  }
-  catch (err) {
+  } catch (err) {
     console.error('Auto-position after draw failed:', err)
   }
 }
@@ -460,8 +499,7 @@ function onOffsetInput(pier: any, value: number) {
       await refreshMapData()
       clearMarkers()
       addBerthMarkers()
-    }
-    catch (err) {
+    } catch (err) {
       console.error('Offset update failed:', err)
     }
   }, 250)
@@ -499,12 +537,10 @@ async function positionBerthsAlongPiers() {
       const group = L.featureGroup(markers)
       mapInstance.fitBounds(group.getBounds().pad(0.1))
     }
-  }
-  catch (e: any) {
+  } catch (e: any) {
     console.error('Positioning failed:', e)
     alert(e.data?.message || 'Positionering mislukt')
-  }
-  finally {
+  } finally {
     positioningLoading.value = false
   }
 }
@@ -541,11 +577,9 @@ async function runAiAnalysis() {
 
     aiResult.value = result
     showAiResult.value = true
-  }
-  catch (e: any) {
+  } catch (e: any) {
     alert('AI analyse mislukt: ' + (e.data?.message || e.message))
-  }
-  finally {
+  } finally {
     aiAnalyzing.value = false
   }
 }
@@ -604,11 +638,9 @@ async function applyAiResult() {
       const group = L.featureGroup(markers)
       mapInstance.fitBounds(group.getBounds().pad(0.1))
     }
-  }
-  catch (e: any) {
+  } catch (e: any) {
     alert('Toepassen mislukt: ' + (e.data?.message || e.message))
-  }
-  finally {
+  } finally {
     positioningLoading.value = false
   }
 }
@@ -647,9 +679,12 @@ function addBerthMarkers() {
     const h = isEdit ? 28 : 20 // length (px)
 
     // Side badge color
-    const sideColor = berth.side === 'LEFT' ? '#3B82F6'
-      : berth.side === 'RIGHT' ? '#EC4899'
-        : berth.side === 'HEAD' ? '#F59E0B'
+    const sideColor = berth.side === 'LEFT'
+      ? '#3B82F6'
+      : berth.side === 'RIGHT'
+        ? '#EC4899'
+        : berth.side === 'HEAD'
+          ? '#F59E0B'
           : '#94A3B8'
 
     const html = `
@@ -691,8 +726,7 @@ function addBerthMarkers() {
         if (dragged) { dragged = false; return }
         await flipBerthSide(berth)
       })
-    }
-    else {
+    } else {
       marker.on('click', () => openBerth(berth.id))
     }
 
@@ -733,17 +767,20 @@ async function flipBerthSide(berth: any) {
     await refreshMapData()
     clearMarkers()
     addBerthMarkers()
-  }
-  catch (err) {
+  } catch (err) {
     console.error('Flip side failed:', err)
   }
 }
 
 function toggleEditMode() {
   editMode.value = !editMode.value
-  if (!editMode.value) cancelDraw()
+  if (!editMode.value) {
+    cancelDraw()
+    cancelPlacingFacility()
+  }
   addBerthMarkers()
   renderVertexHandles()
+  renderFacilityMarkers()
 }
 
 function fitToData() {
@@ -858,8 +895,7 @@ async function onMapDrop(e: DragEvent) {
     })
     await refreshMapData()
     addBerthMarkers()
-  }
-  catch (err) {
+  } catch (err) {
     console.error('Kon ligplaats niet plaatsen', err)
   }
 }
@@ -911,11 +947,9 @@ async function createPier() {
     await refreshMapData()
     // Open add-berth panel for the new pier right away
     openAddBerth(name)
-  }
-  catch (e: any) {
+  } catch (e: any) {
     alert(e?.data?.message || 'Steiger toevoegen mislukt')
-  }
-  finally {
+  } finally {
     addPierSaving.value = false
   }
 }
@@ -956,11 +990,9 @@ async function createBerths() {
     }
     clearMarkers()
     addBerthMarkers()
-  }
-  catch (e: any) {
+  } catch (e: any) {
     alert(e?.data?.message || 'Ligplaatsen toevoegen mislukt')
-  }
-  finally {
+  } finally {
     addBerthSaving.value = false
   }
 }
@@ -975,8 +1007,7 @@ async function togglePierPassanten(pier: any) {
       body: { isPassanten: !allPassanten }
     })
     await refreshMapData()
-  }
-  catch (e: any) {
+  } catch (e: any) {
     alert(e?.data?.message || 'Passanten wijzigen mislukt')
   }
 }
@@ -993,8 +1024,7 @@ async function deletePierWithConfirm(pier: any) {
     await refreshMapData()
     clearMarkers()
     addBerthMarkers()
-  }
-  catch (e: any) {
+  } catch (e: any) {
     alert(e?.data?.message || 'Verwijderen mislukt')
   }
 }
@@ -1010,19 +1040,288 @@ async function deleteBerthWithConfirm(berth: any) {
     await refreshMapData()
     clearMarkers()
     addBerthMarkers()
-  }
-  catch (e: any) {
+  } catch (e: any) {
     alert(e?.data?.message || 'Verwijderen mislukt')
   }
+}
+
+// ─── FACILITIES ───────────────────────────────
+
+async function loadFacilities() {
+  if (!marinaId.value) return
+  try {
+    facilities.value = await $fetch('/api/facilities', { query: { marinaId: marinaId.value } }) as any[]
+    renderFacilityMarkers()
+  } catch (e) {
+    console.error('Kon faciliteiten niet laden:', e)
+  }
+}
+
+function clearFacilityMarkers() {
+  facilityLayers.forEach(l => l.remove())
+  facilityLayers.length = 0
+}
+
+function facilityIconHtml(type: string, opts?: { ghost?: boolean, dim?: boolean }): string {
+  const def = FACILITY_CATALOG[type] || FACILITY_CATALOG.OVERIG!
+  const isGhost = opts?.ghost
+  const bg = isGhost ? 'rgba(255,255,255,0.75)' : def.color
+  const fg = isGhost ? def.color : 'white'
+  const border = isGhost ? `2px dashed ${def.color}` : `2px solid white`
+  const opacity = opts?.dim ? '0.55' : '1'
+  return `
+    <div class="facility-badge" style="
+      width: 32px; height: 32px; border-radius: 50%;
+      background: ${bg}; color: ${fg};
+      border: ${border};
+      box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 700; line-height: 1;
+      opacity: ${opacity};
+    ">${def.glyph}</div>`
+}
+
+function renderFacilityMarkers() {
+  clearFacilityMarkers()
+  if (!mapInstance || !L) return
+  const isEdit = editMode.value
+
+  for (const f of facilities.value) {
+    const icon = L.divIcon({
+      className: 'facility-marker-wrapper',
+      html: facilityIconHtml(f.type),
+      iconSize: [32, 32],
+      iconAnchor: [16, 16]
+    })
+    const marker = L.marker([f.gpsLat, f.gpsLng], {
+      icon, draggable: isEdit, zIndexOffset: 500
+    }).addTo(mapInstance)
+
+    const label = f.name || FACILITY_CATALOG[f.type]?.label || f.type
+    marker.bindTooltip(label, { direction: 'top', offset: [0, -14], opacity: 0.9 })
+
+    if (isEdit) {
+      let dragged = false
+      marker.on('dragstart', () => { dragged = false })
+      marker.on('drag', () => { dragged = true })
+      marker.on('dragend', async (e: any) => {
+        const pos = e.target.getLatLng()
+        f.gpsLat = pos.lat
+        f.gpsLng = pos.lng
+        try {
+          await $fetch(`/api/facilities/${f.id}`, {
+            method: 'PUT', body: { gpsLat: pos.lat, gpsLng: pos.lng }
+          })
+        } catch (err) {
+          console.error('Faciliteit verplaatsen mislukt:', err)
+        }
+      })
+      marker.on('click', () => {
+        if (dragged) { dragged = false; return }
+        editFacility(f)
+      })
+    }
+
+    facilityLayers.push(marker)
+  }
+}
+
+async function placeFacilityAt(type: string, lat: number, lng: number) {
+  if (!marinaId.value) return
+  try {
+    const created = await $fetch('/api/facilities', {
+      method: 'POST',
+      body: { marinaId: marinaId.value, type, gpsLat: lat, gpsLng: lng }
+    }) as any
+    facilities.value.push(created)
+    renderFacilityMarkers()
+  } catch (e: any) {
+    alert(e?.data?.message || 'Faciliteit plaatsen mislukt')
+  }
+}
+
+function startPlacingFacility(type: string) {
+  placingFacilityType.value = placingFacilityType.value === type ? null : type
+  if (mapInstance) {
+    mapInstance.getContainer().style.cursor = placingFacilityType.value ? 'crosshair' : ''
+  }
+}
+
+function cancelPlacingFacility() {
+  placingFacilityType.value = null
+  if (mapInstance) mapInstance.getContainer().style.cursor = ''
+}
+
+async function editFacility(f: any) {
+  const def = FACILITY_CATALOG[f.type]
+  const currentName = f.name || ''
+  const action = prompt(
+    `${def?.label || f.type}\n\nNaam (leeg = standaardnaam), typ "verwijder" om te verwijderen:`,
+    currentName
+  )
+  if (action === null) return
+  const trimmed = action.trim()
+  if (trimmed.toLowerCase() === 'verwijder') {
+    await deleteFacility(f)
+    return
+  }
+  try {
+    const updated = await $fetch(`/api/facilities/${f.id}`, {
+      method: 'PUT', body: { name: trimmed || null }
+    }) as any
+    Object.assign(f, updated)
+    renderFacilityMarkers()
+  } catch (e: any) {
+    alert(e?.data?.message || 'Bewerken mislukt')
+  }
+}
+
+async function deleteFacility(f: any) {
+  try {
+    await $fetch(`/api/facilities/${f.id}`, { method: 'DELETE' })
+    facilities.value = facilities.value.filter(x => x.id !== f.id)
+    renderFacilityMarkers()
+  } catch (e: any) {
+    alert(e?.data?.message || 'Verwijderen mislukt')
+  }
+}
+
+// ─── AI FACILITY SUGGESTIONS ───────────────────
+
+function clearSuggestionMarkers() {
+  suggestionLayers.forEach(l => l.remove())
+  suggestionLayers.length = 0
+}
+
+function renderSuggestionMarkers() {
+  clearSuggestionMarkers()
+  if (!mapInstance || !L) return
+  for (const [idx, s] of suggestions.value.entries()) {
+    const icon = L.divIcon({
+      className: 'facility-marker-wrapper',
+      html: facilityIconHtml(s.type, { ghost: true }),
+      iconSize: [32, 32],
+      iconAnchor: [16, 16]
+    })
+    const marker = L.marker([s.gpsLat, s.gpsLng], { icon, zIndexOffset: 900 }).addTo(mapInstance)
+    const def = FACILITY_CATALOG[s.type]
+    const label = `💡 ${s.name || def?.label || s.type}${typeof s.confidence === 'number' ? ` (${Math.round(s.confidence * 100)}%)` : ''}`
+    marker.bindTooltip(label, { direction: 'top', offset: [0, -14], permanent: false })
+    marker.on('click', () => acceptSuggestion(idx))
+    suggestionLayers.push(marker)
+  }
+}
+
+async function runFacilitySuggest() {
+  if (!mapInstance || !marinaId.value) return
+  suggestLoading.value = true
+  try {
+    const html2canvas = (await import('html2canvas-pro')).default
+    const canvas = await html2canvas(mapInstance.getContainer(), {
+      useCORS: true, allowTaint: true, scale: 1
+    })
+    const imageBase64 = canvas.toDataURL('image/png')
+    const bounds = mapInstance.getBounds()
+    const center = mapInstance.getCenter()
+
+    const result = await $fetch('/api/facilities/suggest', {
+      method: 'POST',
+      body: {
+        imageBase64,
+        bounds: {
+          north: bounds.getNorth(), south: bounds.getSouth(),
+          east: bounds.getEast(), west: bounds.getWest()
+        },
+        center: { lat: center.lat, lng: center.lng },
+        zoom: mapInstance.getZoom(),
+        marinaName: mapData.value?.marina?.name || ''
+      }
+    }) as any
+
+    suggestions.value = result.facilities || []
+    suggestNotes.value = result.notes || null
+    renderSuggestionMarkers()
+    if (!suggestions.value.length) {
+      alert('AI kon geen faciliteiten herkennen. Zoom verder uit of naar een ander deel van de haven en probeer opnieuw.')
+    }
+  } catch (e: any) {
+    alert('AI suggestie mislukt: ' + (e.data?.message || e.message))
+  } finally {
+    suggestLoading.value = false
+  }
+}
+
+async function acceptSuggestion(idx: number) {
+  const s = suggestions.value[idx]
+  if (!s || !marinaId.value) return
+  try {
+    const created = await $fetch('/api/facilities', {
+      method: 'POST',
+      body: {
+        marinaId: marinaId.value,
+        type: s.type,
+        name: s.name || null,
+        gpsLat: s.gpsLat,
+        gpsLng: s.gpsLng
+      }
+    }) as any
+    facilities.value.push(created)
+    suggestions.value.splice(idx, 1)
+    renderFacilityMarkers()
+    renderSuggestionMarkers()
+  } catch (e: any) {
+    alert(e?.data?.message || 'Suggestie overnemen mislukt')
+  }
+}
+
+async function acceptAllSuggestions() {
+  const list = suggestions.value.slice()
+  for (const s of list) {
+    try {
+      const created = await $fetch('/api/facilities', {
+        method: 'POST',
+        body: {
+          marinaId: marinaId.value,
+          type: s.type,
+          name: s.name || null,
+          gpsLat: s.gpsLat,
+          gpsLng: s.gpsLng
+        }
+      }) as any
+      facilities.value.push(created)
+    } catch (err) {
+      console.error('Suggestie overslaan:', err)
+    }
+  }
+  suggestions.value = []
+  suggestNotes.value = null
+  renderFacilityMarkers()
+  clearSuggestionMarkers()
+}
+
+function rejectAllSuggestions() {
+  suggestions.value = []
+  suggestNotes.value = null
+  clearSuggestionMarkers()
+}
+
+function rejectSuggestion(idx: number) {
+  suggestions.value.splice(idx, 1)
+  renderSuggestionMarkers()
 }
 </script>
 
 <template>
-  <div class="flex flex-col" style="height: 100vh">
+  <div
+    class="flex flex-col"
+    style="height: 100vh"
+  >
     <!-- Topbar -->
     <div class="px-4 lg:px-6 py-2.5 lg:py-3 bg-white border-b border-black/[0.08] flex items-center justify-between shrink-0 gap-2">
       <div class="shrink-0">
-        <h1 class="text-base lg:text-xl font-semibold text-[#0A1520] tracking-tight">Kaart</h1>
+        <h1 class="text-base lg:text-xl font-semibold text-[#0A1520] tracking-tight">
+          Kaart
+        </h1>
       </div>
 
       <div class="flex items-center gap-1.5 overflow-x-auto">
@@ -1059,11 +1358,14 @@ async function deleteBerthWithConfirm(berth: any) {
         <div class="hidden sm:flex gap-1">
           <span
             v-for="(count, status) in counts"
-            :key="status"
             v-show="(count as number) > 0"
+            :key="status"
             class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white border border-black/[0.08] text-[9px] lg:text-[10px] font-medium"
           >
-            <span class="w-1.5 h-1.5 rounded-full" :style="{ background: statusColors[status as string] }" />
+            <span
+              class="w-1.5 h-1.5 rounded-full"
+              :style="{ background: statusColors[status as string] }"
+            />
             {{ count }}
           </span>
         </div>
@@ -1078,8 +1380,14 @@ async function deleteBerthWithConfirm(berth: any) {
       <div class="flex items-center gap-2 min-w-0">
         <span class="text-[13px] lg:text-sm font-semibold truncate">
           Steiger {{ drawPierName }}
-          <span v-if="drawMode === 'main'" class="font-normal opacity-90">— klik punten ({{ drawPoints.length }})</span>
-          <span v-if="drawMode === 'head'" class="font-normal opacity-90">— klik 2 kop-punten ({{ drawHeadPoints.length }}/2)</span>
+          <span
+            v-if="drawMode === 'main'"
+            class="font-normal opacity-90"
+          >— klik punten ({{ drawPoints.length }})</span>
+          <span
+            v-if="drawMode === 'head'"
+            class="font-normal opacity-90"
+          >— klik 2 kop-punten ({{ drawHeadPoints.length }}/2)</span>
         </span>
       </div>
       <div class="flex gap-1.5 shrink-0">
@@ -1089,7 +1397,10 @@ async function deleteBerthWithConfirm(berth: any) {
           title="Laatste punt ongedaan maken (Ctrl+Z)"
           @click="undoLastPoint"
         >
-          <UIcon name="i-lucide-undo-2" class="size-3.5" />
+          <UIcon
+            name="i-lucide-undo-2"
+            class="size-3.5"
+          />
           <span class="hidden sm:inline">Ongedaan</span>
         </button>
         <button
@@ -1128,7 +1439,9 @@ async function deleteBerthWithConfirm(berth: any) {
         <!-- Edit mode: pier drawing tools -->
         <template v-if="editMode">
           <div class="px-4 py-3 border-b border-black/[0.08]">
-            <div class="text-sm font-semibold text-[#0A1520]">Steigers beheren</div>
+            <div class="text-sm font-semibold text-[#0A1520]">
+              Steigers beheren
+            </div>
             <div class="text-[11px] text-[#5A6A78] mt-0.5">
               Voeg steigers en ligplaatsen toe, teken ze op de kaart, of pas bestaande aan.
             </div>
@@ -1141,7 +1454,10 @@ async function deleteBerthWithConfirm(berth: any) {
           </div>
 
           <!-- Drag-list: unpositioned berths -->
-          <div v-if="unpositionedCount > 0" class="px-3 py-2 border-b border-black/[0.08]">
+          <div
+            v-if="unpositionedCount > 0"
+            class="px-3 py-2 border-b border-black/[0.08]"
+          >
             <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-2">
               Sleep naar kaart ({{ unpositionedCount }})
             </div>
@@ -1156,7 +1472,10 @@ async function deleteBerthWithConfirm(berth: any) {
                 @dragstart="onDragStartBerth($event, berth)"
                 @dragend="onDragEndBerth"
               >
-                <UIcon name="i-lucide-grip-vertical" class="size-3 opacity-60" />
+                <UIcon
+                  name="i-lucide-grip-vertical"
+                  class="size-3 opacity-60"
+                />
                 <span>{{ berth.code }}</span>
                 <span class="opacity-70 font-normal">{{ berth.length }}m</span>
               </div>
@@ -1172,7 +1491,10 @@ async function deleteBerthWithConfirm(berth: any) {
             >
               + Nieuwe steiger
             </button>
-            <div v-else class="flex flex-col gap-2">
+            <div
+              v-else
+              class="flex flex-col gap-2"
+            >
               <label class="flex items-center gap-2">
                 <span class="text-[11px] text-[#5A6A78] w-14">Naam</span>
                 <input
@@ -1183,7 +1505,11 @@ async function deleteBerthWithConfirm(berth: any) {
                 >
               </label>
               <label class="flex items-center gap-1.5 text-xs text-[#2D3E4A] cursor-pointer">
-                <input v-model="addPierHasHead" type="checkbox" class="accent-primary-500">
+                <input
+                  v-model="addPierHasHead"
+                  type="checkbox"
+                  class="accent-primary-500"
+                >
                 T-kop (kopsteiger aan het eind)
               </label>
               <div class="flex gap-2">
@@ -1205,7 +1531,10 @@ async function deleteBerthWithConfirm(berth: any) {
           </div>
 
           <!-- All piers (drawn or not) -->
-          <div v-if="pierNames.length" class="px-3 py-2">
+          <div
+            v-if="pierNames.length"
+            class="px-3 py-2"
+          >
             <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-2">
               Steigers ({{ pierNames.length }})
             </div>
@@ -1217,10 +1546,16 @@ async function deleteBerthWithConfirm(berth: any) {
               <div class="flex items-center justify-between text-xs mb-1.5">
                 <span class="font-medium text-[#0A1520]">
                   Steiger {{ name }}
-                  <span v-if="drawnPiers.find(p => p.name === name)?.headPoints" class="text-[#F59E0B]">+ T-kop</span>
+                  <span
+                    v-if="drawnPiers.find(p => p.name === name)?.headPoints"
+                    class="text-[#F59E0B]"
+                  >+ T-kop</span>
                   <span class="text-[10px] text-[#5A6A78] ml-1">
                     {{ berthCountByPier[name] || 0 }} plaatsen
-                    <span v-if="(passantenCountByPier[name] || 0) > 0" class="text-primary-500">
+                    <span
+                      v-if="(passantenCountByPier[name] || 0) > 0"
+                      class="text-primary-500"
+                    >
                       · {{ passantenCountByPier[name] }} passanten
                     </span>
                   </span>
@@ -1329,7 +1664,11 @@ async function deleteBerthWithConfirm(berth: any) {
                   </div>
                 </div>
                 <label class="flex items-center gap-2 text-xs cursor-pointer">
-                  <input v-model="addBerthPassanten" type="checkbox" class="accent-primary-500 w-4 h-4">
+                  <input
+                    v-model="addBerthPassanten"
+                    type="checkbox"
+                    class="accent-primary-500 w-4 h-4"
+                  >
                   <span class="text-[#0A1520] font-medium">Passantenplaatsen</span>
                 </label>
                 <div class="flex gap-1.5">
@@ -1352,7 +1691,10 @@ async function deleteBerthWithConfirm(berth: any) {
           </div>
 
           <!-- Position berths button -->
-          <div v-if="drawnPiers.length" class="p-3 border-t border-black/[0.08]">
+          <div
+            v-if="drawnPiers.length"
+            class="p-3 border-t border-black/[0.08]"
+          >
             <button
               class="w-full py-2 rounded-full bg-primary-500 text-white text-sm font-semibold disabled:opacity-50"
               :disabled="positioningLoading"
@@ -1360,6 +1702,154 @@ async function deleteBerthWithConfirm(berth: any) {
             >
               {{ positioningLoading ? 'Bezig...' : 'Plaats berths op steigers' }}
             </button>
+          </div>
+
+          <!-- Facilities (sanitair, kantine, parkeren, …) -->
+          <div class="p-3 border-t border-black/[0.08]">
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold">
+                Faciliteiten ({{ facilities.length }})
+              </div>
+              <button
+                class="px-2 py-1 rounded-full text-[10px] font-semibold bg-[#F4F7F8] text-[#0A1520] hover:bg-black/5 disabled:opacity-50 inline-flex items-center gap-1"
+                :disabled="suggestLoading"
+                title="Laat AI faciliteiten voorstellen op basis van de satellietfoto"
+                @click="runFacilitySuggest"
+              >
+                <UIcon
+                  name="i-lucide-sparkles"
+                  class="size-3"
+                />
+                {{ suggestLoading ? 'AI zoekt...' : 'AI suggesties' }}
+              </button>
+            </div>
+
+            <div class="text-[11px] text-[#5A6A78] mb-2">
+              Klik op een icoon, klik dan op de kaart om te plaatsen. Klik een icoon op de kaart om te hernoemen of te verwijderen.
+            </div>
+
+            <!-- Type picker grid -->
+            <div class="grid grid-cols-4 gap-1.5 mb-2">
+              <button
+                v-for="type in FACILITY_TYPES"
+                :key="type"
+                class="aspect-square rounded-[10px] flex flex-col items-center justify-center gap-0.5 border transition-all text-[9px] font-medium"
+                :class="placingFacilityType === type
+                  ? 'bg-primary-500 text-white border-primary-500 shadow-md'
+                  : 'bg-white border-black/[0.08] text-[#5A6A78] hover:bg-black/[0.03]'"
+                :title="FACILITY_CATALOG[type]?.label"
+                @click="startPlacingFacility(type)"
+              >
+                <span class="text-base leading-none">{{ FACILITY_CATALOG[type]?.glyph }}</span>
+                <span class="truncate max-w-full px-0.5">{{ FACILITY_CATALOG[type]?.label }}</span>
+              </button>
+            </div>
+
+            <div
+              v-if="placingFacilityType"
+              class="rounded-md bg-primary-500/10 border border-primary-500/20 px-2 py-1.5 text-[11px] text-primary-600 flex items-center justify-between gap-2 mb-2"
+            >
+              <span class="truncate">
+                Klik op de kaart om <strong>{{ FACILITY_CATALOG[placingFacilityType]?.label }}</strong> te plaatsen
+              </span>
+              <button
+                class="text-[10px] underline shrink-0"
+                @click="cancelPlacingFacility"
+              >
+                Stop
+              </button>
+            </div>
+
+            <!-- AI suggestions banner -->
+            <div
+              v-if="suggestions.length"
+              class="rounded-[10px] bg-amber-500/10 border border-amber-500/30 p-2 mb-2"
+            >
+              <div class="flex items-center gap-1.5 mb-1.5">
+                <UIcon
+                  name="i-lucide-sparkles"
+                  class="size-3 text-amber-600"
+                />
+                <span class="text-[11px] font-semibold text-[#B45309]">
+                  AI suggesties ({{ suggestions.length }})
+                </span>
+              </div>
+              <div
+                v-if="suggestNotes"
+                class="text-[10px] text-[#92400E] mb-1.5 italic"
+              >
+                {{ suggestNotes }}
+              </div>
+              <div class="flex flex-col gap-1 max-h-[180px] overflow-y-auto">
+                <div
+                  v-for="(s, idx) in suggestions"
+                  :key="idx"
+                  class="flex items-center gap-1.5 text-[11px] bg-white/70 rounded-md px-1.5 py-1"
+                >
+                  <span class="text-sm">{{ FACILITY_CATALOG[s.type]?.glyph || '📍' }}</span>
+                  <span class="flex-1 min-w-0 truncate text-[#0A1520]">
+                    {{ s.name || FACILITY_CATALOG[s.type]?.label || s.type }}
+                  </span>
+                  <button
+                    class="w-5 h-5 rounded bg-primary-500 text-white flex items-center justify-center hover:bg-primary-600"
+                    title="Accepteer"
+                    @click="acceptSuggestion(idx)"
+                  >
+                    <UIcon
+                      name="i-lucide-check"
+                      class="size-3"
+                    />
+                  </button>
+                  <button
+                    class="w-5 h-5 rounded bg-[#F4F7F8] text-[#5A6A78] flex items-center justify-center hover:bg-black/10"
+                    title="Verwerp"
+                    @click="rejectSuggestion(idx)"
+                  >
+                    <UIcon
+                      name="i-lucide-x"
+                      class="size-3"
+                    />
+                  </button>
+                </div>
+              </div>
+              <div class="flex gap-1.5 mt-1.5">
+                <button
+                  class="flex-1 py-1 rounded-md bg-primary-500 text-white text-[10px] font-semibold hover:bg-primary-600"
+                  @click="acceptAllSuggestions"
+                >
+                  Alles accepteren
+                </button>
+                <button
+                  class="px-2 py-1 rounded-md bg-[#F4F7F8] text-[#5A6A78] text-[10px] font-medium hover:bg-black/5"
+                  @click="rejectAllSuggestions"
+                >
+                  Wis
+                </button>
+              </div>
+            </div>
+
+            <!-- Existing facilities list -->
+            <div
+              v-if="facilities.length"
+              class="flex flex-col gap-0.5 max-h-[200px] overflow-y-auto"
+            >
+              <div
+                v-for="f in facilities"
+                :key="f.id"
+                class="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-black/[0.03]"
+              >
+                <span class="text-base leading-none">{{ FACILITY_CATALOG[f.type]?.glyph || '📍' }}</span>
+                <span class="flex-1 min-w-0 truncate text-[11px] text-[#0A1520]">
+                  {{ f.name || FACILITY_CATALOG[f.type]?.label || f.type }}
+                </span>
+                <button
+                  class="text-[9px] text-red-500 hover:text-red-700 shrink-0"
+                  @click="deleteFacility(f)"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
           </div>
         </template>
 
@@ -1378,10 +1868,17 @@ async function deleteBerthWithConfirm(berth: any) {
               class="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.03] transition-colors text-left"
               @click="openBerth(berth.id)"
             >
-              <span class="w-2.5 h-2.5 rounded-sm shrink-0" :style="{ background: statusColors[berth.status] }" />
+              <span
+                class="w-2.5 h-2.5 rounded-sm shrink-0"
+                :style="{ background: statusColors[berth.status] }"
+              />
               <div class="flex-1 min-w-0">
-                <div class="text-[13px] font-semibold text-[#0A1520] truncate">{{ berth.code }}</div>
-                <div class="text-[11px] text-[#5A6A78] truncate">{{ berth.customer?.name || 'Geen huurder' }}</div>
+                <div class="text-[13px] font-semibold text-[#0A1520] truncate">
+                  {{ berth.code }}
+                </div>
+                <div class="text-[11px] text-[#5A6A78] truncate">
+                  {{ berth.customer?.name || 'Geen huurder' }}
+                </div>
               </div>
               <span class="text-[10px] text-[#5A6A78]">{{ berth.length }}m</span>
             </button>
@@ -1390,15 +1887,25 @@ async function deleteBerthWithConfirm(berth: any) {
       </div>
 
       <!-- Map area -->
-      <div class="flex-1 relative min-w-0" @dragover.prevent="onMapDragOver" @drop.prevent="onMapDrop">
-        <div ref="mapContainer" class="w-full h-full" />
+      <div
+        class="flex-1 relative min-w-0"
+        @dragover.prevent="onMapDragOver"
+        @drop.prevent="onMapDrop"
+      >
+        <div
+          ref="mapContainer"
+          class="w-full h-full"
+        />
 
         <!-- Mobile panel toggle -->
         <button
           class="lg:hidden absolute top-3 left-3 z-[1001] w-10 h-10 bg-white/95 backdrop-blur-sm rounded-full border border-black/[0.08] shadow-lg flex items-center justify-center"
           @click="showPanel = !showPanel"
         >
-          <UIcon :name="showPanel ? 'i-lucide-x' : 'i-lucide-list'" class="size-5 text-[#0A1520]" />
+          <UIcon
+            :name="showPanel ? 'i-lucide-x' : 'i-lucide-list'"
+            class="size-5 text-[#0A1520]"
+          />
         </button>
       </div>
 
@@ -1418,13 +1925,28 @@ async function deleteBerthWithConfirm(berth: any) {
 
     <!-- AI Result Modal -->
     <Transition name="fade">
-      <div v-if="showAiResult && aiResult" class="fixed inset-0 z-[2000] flex items-center justify-center p-4" @click="showAiResult = false">
+      <div
+        v-if="showAiResult && aiResult"
+        class="fixed inset-0 z-[2000] flex items-center justify-center p-4"
+        @click="showAiResult = false"
+      >
         <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-        <div class="relative bg-white rounded-[20px] shadow-2xl max-w-xl w-full max-h-[80vh] overflow-y-auto p-6" @click.stop>
+        <div
+          class="relative bg-white rounded-[20px] shadow-2xl max-w-xl w-full max-h-[80vh] overflow-y-auto p-6"
+          @click.stop
+        >
           <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-semibold text-[#0A1520]">AI analyse resultaat</h2>
-            <button class="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center" @click="showAiResult = false">
-              <UIcon name="i-lucide-x" class="size-4" />
+            <h2 class="text-lg font-semibold text-[#0A1520]">
+              AI analyse resultaat
+            </h2>
+            <button
+              class="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center"
+              @click="showAiResult = false"
+            >
+              <UIcon
+                name="i-lucide-x"
+                class="size-4"
+              />
             </button>
           </div>
 
@@ -1432,7 +1954,10 @@ async function deleteBerthWithConfirm(berth: any) {
             {{ aiResult.piers?.length || 0 }} steigers en ~{{ aiResult.totalBerths || 0 }} ligplaatsen gedetecteerd.
           </p>
 
-          <div v-if="aiResult.notes" class="bg-primary-500/5 border border-primary-500/20 rounded-[10px] p-3 mb-4 text-xs text-[#0A1520]">
+          <div
+            v-if="aiResult.notes"
+            class="bg-primary-500/5 border border-primary-500/20 rounded-[10px] p-3 mb-4 text-xs text-[#0A1520]"
+          >
             {{ aiResult.notes }}
           </div>
 
@@ -1448,7 +1973,10 @@ async function deleteBerthWithConfirm(berth: any) {
               </div>
               <div class="text-[11px] text-[#5A6A78]">
                 {{ pier.avgBerthLength || '?' }}m × {{ pier.avgBerthWidth || '?' }}m
-                <span v-if="pier.hasHead" class="text-amber-500 ml-1">T-kop</span>
+                <span
+                  v-if="pier.hasHead"
+                  class="text-amber-500 ml-1"
+                >T-kop</span>
               </div>
             </div>
           </div>
@@ -1475,7 +2003,7 @@ async function deleteBerthWithConfirm(berth: any) {
 </template>
 
 <style>
-.berth-marker-wrapper, .pier-label {
+.berth-marker-wrapper, .pier-label, .facility-marker-wrapper, .pier-vertex {
   background: none !important;
   border: none !important;
 }

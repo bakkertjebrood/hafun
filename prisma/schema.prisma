@@ -23,16 +23,17 @@ model Marina {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  users     User[]
-  berths    Berth[]
-  customers Customer[]
-  boats     Boat[]
-  bookings  Booking[]
-  guests    Guest[]
-  invoices  Invoice[]
-  notes     Note[]
-  pierLines PierLine[]
-  tariffs   Tariff[]
+  users      User[]
+  berths     Berth[]
+  customers  Customer[]
+  boats      Boat[]
+  bookings   Booking[]
+  guests     Guest[]
+  invoices   Invoice[]
+  notes      Note[]
+  pierLines  PierLine[]
+  tariffs    Tariff[]
+  facilities Facility[]
 }
 
 // Pier geometry — drawn on the map
@@ -52,6 +53,46 @@ model PierLine {
   marina Marina @relation(fields: [marinaId], references: [id])
 
   @@unique([marinaId, name])
+  @@index([marinaId])
+}
+
+// Physical facilities / points of interest drawn on the marina map
+// (toilets, canteen, parking, crane, fuel dock, etc.)
+enum FacilityType {
+  SANITAIR
+  KANTINE
+  PARKEREN
+  HAVENMEESTER
+  TANKSTATION
+  AFVAL
+  KRAAN
+  WERKPLAATS
+  WINKEL
+  TERRAS
+  SPEELTUIN
+  WATERPUNT
+  STROOMPUNT
+  WIFI
+  EHBO
+  HELLING
+  TOEGANG
+  OVERIG
+}
+
+model Facility {
+  id          String       @id @default(uuid())
+  marinaId    String
+  type        FacilityType
+  name        String?
+  description String?
+  gpsLat      Float
+  gpsLng      Float
+  radius      Float?       // optional visual radius in meters for larger areas (parking, terrace)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  marina Marina @relation(fields: [marinaId], references: [id])
+
   @@index([marinaId])
 }
 
