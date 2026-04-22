@@ -13,7 +13,8 @@ export default defineEventHandler(async (event) => {
       slug: true,
       gpsLat: true,
       gpsLng: true,
-      setupComplete: true
+      setupComplete: true,
+      settings: true
     }
   })
 

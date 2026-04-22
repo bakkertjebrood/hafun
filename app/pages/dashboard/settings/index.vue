@@ -42,7 +42,9 @@ onMounted(async () => {
 })
 
 async function fetchMarina() {
-  marina.value = await $fetch('/api/marina/me')
+  const data = await $fetch('/api/marina/me') as any
+  if (!data.settings) data.settings = { email: '', address: '' }
+  marina.value = data
 }
 
 async function fetchUsers() {
