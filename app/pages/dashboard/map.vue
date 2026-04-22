@@ -666,6 +666,11 @@ async function openBerth(id: string) {
   slideOverOpen.value = true
 }
 
+watch(slideOverOpen, async () => {
+  await nextTick()
+  setTimeout(() => mapInstance?.invalidateSize(), 260)
+})
+
 async function onStatusChanged() {
   await refreshMapData()
   if (selectedBerth.value) {
@@ -956,8 +961,9 @@ async function deleteBerthWithConfirm(berth: any) {
       </div>
     </div>
 
-    <!-- Map -->
-    <div class="flex-1 relative">
+    <!-- Map + inline slide-over -->
+    <div class="flex-1 flex overflow-hidden min-h-0">
+      <div class="flex-1 relative min-w-0">
       <div ref="mapContainer" class="w-full h-full" />
 
       <!-- Mobile panel toggle -->
@@ -1216,20 +1222,21 @@ async function deleteBerthWithConfirm(berth: any) {
           </div>
         </template>
       </div>
-    </div>
+      </div>
 
-    <!-- Slide-over -->
-    <MapBerthSlideOver
-      v-if="selectedBerth"
-      :berth="selectedBerth"
-      :open="slideOverOpen"
-      :edit-mode="editMode"
-      @close="slideOverOpen = false"
-      @status-changed="onStatusChanged"
-      @note-added="onNoteAdded"
-      @passanten-changed="onStatusChanged"
-      @delete-requested="deleteBerthWithConfirm(selectedBerth)"
-    />
+      <!-- Slide-over: inline on desktop, overlay on mobile -->
+      <MapBerthSlideOver
+        v-if="selectedBerth"
+        :berth="selectedBerth"
+        :open="slideOverOpen"
+        :edit-mode="editMode"
+        @close="slideOverOpen = false"
+        @status-changed="onStatusChanged"
+        @note-added="onNoteAdded"
+        @passanten-changed="onStatusChanged"
+        @delete-requested="deleteBerthWithConfirm(selectedBerth)"
+      />
+    </div>
   </div>
 </template>
 
