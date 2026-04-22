@@ -709,10 +709,52 @@ const filteredBerths = computed(() => {
   if (!activePier.value) return mapData.value.berths
   return mapData.value.berths.filter((b: any) => b.pier === activePier.value)
 })
-const unpositionedCount = computed(() => {
-  if (!mapData.value?.berths) return 0
-  return mapData.value.berths.filter((b: any) => b.gpsLat == null || b.gpsLng == null).length
+const unpositionedBerths = computed<any[]>(() => {
+  if (!mapData.value?.berths) return []
+  return mapData.value.berths.filter((b: any) => b.gpsLat == null || b.gpsLng == null)
 })
+const unpositionedCount = computed(() => unpositionedBerths.value.length)
+
+// ─── DRAG & DROP ONGEPLAATSTE LIGPLAATSEN ──────
+const draggingBerthId = ref<string | null>(null)
+
+function onDragStartBerth(e: DragEvent, berth: any) {
+  if (!e.dataTransfer) return
+  draggingBerthId.value = berth.id
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/berth-id', berth.id)
+}
+
+function onDragEndBerth() {
+  draggingBerthId.value = null
+}
+
+function onMapDragOver(e: DragEvent) {
+  if (!draggingBerthId.value && !e.dataTransfer?.types.includes('text/berth-id')) return
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+}
+
+async function onMapDrop(e: DragEvent) {
+  const id = e.dataTransfer?.getData('text/berth-id') || draggingBerthId.value
+  draggingBerthId.value = null
+  if (!id || !mapInstance || !mapContainer.value) return
+
+  const rect = mapContainer.value.getBoundingClientRect()
+  const point = [e.clientX - rect.left, e.clientY - rect.top] as [number, number]
+  const latlng = mapInstance.containerPointToLatLng(point)
+
+  try {
+    await $fetch(`/api/berths/${id}`, {
+      method: 'PUT',
+      body: { gpsLat: latlng.lat, gpsLng: latlng.lng, side: null }
+    })
+    await refreshMapData()
+    addBerthMarkers()
+  }
+  catch (err) {
+    console.error('Kon ligplaats niet plaatsen', err)
+  }
+}
 
 // ─── PIER/BERTH MANAGEMENT (edit mode) ───────────
 
@@ -963,24 +1005,10 @@ async function deleteBerthWithConfirm(berth: any) {
 
     <!-- Map + inline slide-over -->
     <div class="flex-1 flex overflow-hidden min-h-0">
-      <div class="flex-1 relative min-w-0">
-      <div ref="mapContainer" class="w-full h-full" />
-
-      <!-- Mobile panel toggle -->
-      <button
-        class="lg:hidden absolute top-3 left-3 z-[1001] w-10 h-10 bg-white/95 backdrop-blur-sm rounded-full border border-black/[0.08] shadow-lg flex items-center justify-center"
-        @click="showPanel = !showPanel"
-      >
-        <UIcon :name="showPanel ? 'i-lucide-x' : 'i-lucide-list'" class="size-5 text-[#0A1520]" />
-      </button>
-
-      <!-- Left panel: berths OR pier tools -->
+      <!-- Left panel: berths OR pier tools (inline on desktop, overlay on mobile) -->
       <div
-        class="absolute z-[1000] bg-white/95 backdrop-blur-sm border border-black/[0.08] shadow-lg overflow-hidden flex flex-col transition-transform duration-300"
-        :class="[
-          showPanel ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
-          'top-0 left-0 w-[280px] max-h-full lg:top-4 lg:left-4 lg:max-h-[calc(100%-32px)] lg:rounded-[14px] rounded-r-[14px]'
-        ]"
+        class="bg-white border-r border-black/[0.08] flex flex-col overflow-y-auto transition-transform duration-300 fixed top-0 left-0 h-full w-[280px] z-[1000] shadow-lg lg:static lg:inset-auto lg:h-full lg:z-auto lg:shadow-none lg:shrink-0 lg:translate-x-0"
+        :class="showPanel ? 'translate-x-0' : '-translate-x-full'"
       >
         <!-- Edit mode: pier drawing tools -->
         <template v-if="editMode">
@@ -993,7 +1021,30 @@ async function deleteBerthWithConfirm(berth: any) {
               v-if="unpositionedCount > 0"
               class="mt-2 text-[11px] text-[#B45309] bg-amber-500/10 border border-amber-500/20 rounded-md px-2 py-1.5"
             >
-              {{ unpositionedCount }} ligplaats{{ unpositionedCount === 1 ? '' : 'en' }} nog niet op de kaart. Teken de bijbehorende steiger of klik "Plaats berths".
+              {{ unpositionedCount }} ligplaats{{ unpositionedCount === 1 ? '' : 'en' }} nog niet op de kaart. Sleep ze hieronder naar de kaart, teken een steiger, of klik "Plaats berths".
+            </div>
+          </div>
+
+          <!-- Drag-list: unpositioned berths -->
+          <div v-if="unpositionedCount > 0" class="px-3 py-2 border-b border-black/[0.08]">
+            <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-2">
+              Sleep naar kaart ({{ unpositionedCount }})
+            </div>
+            <div class="flex flex-wrap gap-1.5 max-h-[180px] overflow-y-auto">
+              <div
+                v-for="berth in unpositionedBerths"
+                :key="berth.id"
+                draggable="true"
+                class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/30 text-[11px] font-semibold text-[#B45309] cursor-grab active:cursor-grabbing select-none"
+                :class="{ 'opacity-40': draggingBerthId === berth.id }"
+                :title="`Sleep ${berth.code} naar een positie op de kaart`"
+                @dragstart="onDragStartBerth($event, berth)"
+                @dragend="onDragEndBerth"
+              >
+                <UIcon name="i-lucide-grip-vertical" class="size-3 opacity-60" />
+                <span>{{ berth.code }}</span>
+                <span class="opacity-70 font-normal">{{ berth.length }}m</span>
+              </div>
             </div>
           </div>
 
@@ -1222,6 +1273,18 @@ async function deleteBerthWithConfirm(berth: any) {
           </div>
         </template>
       </div>
+
+      <!-- Map area -->
+      <div class="flex-1 relative min-w-0" @dragover.prevent="onMapDragOver" @drop.prevent="onMapDrop">
+        <div ref="mapContainer" class="w-full h-full" />
+
+        <!-- Mobile panel toggle -->
+        <button
+          class="lg:hidden absolute top-3 left-3 z-[1001] w-10 h-10 bg-white/95 backdrop-blur-sm rounded-full border border-black/[0.08] shadow-lg flex items-center justify-center"
+          @click="showPanel = !showPanel"
+        >
+          <UIcon :name="showPanel ? 'i-lucide-x' : 'i-lucide-list'" class="size-5 text-[#0A1520]" />
+        </button>
       </div>
 
       <!-- Slide-over: inline on desktop, overlay on mobile -->
