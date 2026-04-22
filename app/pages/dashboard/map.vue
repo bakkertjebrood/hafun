@@ -37,6 +37,23 @@ const statusLabels: Record<string, string> = {
   STORAGE: 'Stalling', TEMPORARY: 'Tijdelijk', EMPTY: 'Leeg', RELOCATED: 'Verplaatst'
 }
 
+// Bearing (0 = north, 90 = east) from A to B
+function bearingOf(a: number[], b: number[]): number {
+  const φ1 = a[0]! * Math.PI / 180
+  const φ2 = b[0]! * Math.PI / 180
+  const Δλ = (b[1]! - a[1]!) * Math.PI / 180
+  const y = Math.sin(Δλ) * Math.cos(φ2)
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ)
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
+}
+
+// Overall direction of a pier (first → last point)
+function pierBearing(pier: any): number {
+  const pts = pier?.points as number[][] | undefined
+  if (!pts || pts.length < 2) return 0
+  return bearingOf(pts[0]!, pts[pts.length - 1]!)
+}
+
 onMounted(async () => {
   const leaflet = await import('leaflet')
   await import('leaflet/dist/leaflet.css')
@@ -426,6 +443,45 @@ async function deletePier(id: string) {
   await loadPiers()
 }
 
+const offsetUpdateTimers: Record<string, any> = {}
+function onOffsetInput(pier: any, value: number) {
+  pier.berthOffset = value
+  clearTimeout(offsetUpdateTimers[pier.id])
+  offsetUpdateTimers[pier.id] = setTimeout(async () => {
+    try {
+      await $fetch(`/api/piers/${pier.id}`, {
+        method: 'PUT',
+        body: { berthOffset: value }
+      })
+      await $fetch('/api/piers/position-berths', {
+        method: 'POST',
+        body: { marinaId: marinaId.value, pierNames: [pier.name] }
+      })
+      await refreshMapData()
+      clearMarkers()
+      addBerthMarkers()
+    }
+    catch (err) {
+      console.error('Offset update failed:', err)
+    }
+  }, 250)
+}
+
+async function flipAllSides(pier: any) {
+  const pierBerths = (mapData.value?.berths || []).filter((b: any) => b.pier === pier.name && b.side !== 'HEAD')
+  await Promise.all(pierBerths.map((b: any) => $fetch(`/api/berths/${b.id}`, {
+    method: 'PUT',
+    body: { side: b.side === 'LEFT' ? 'RIGHT' : 'LEFT' }
+  })))
+  await $fetch('/api/piers/position-berths', {
+    method: 'POST',
+    body: { marinaId: marinaId.value, pierNames: [pier.name] }
+  })
+  await refreshMapData()
+  clearMarkers()
+  addBerthMarkers()
+}
+
 // ─── POSITION BERTHS ALONG PIERS ──────────────
 
 async function positionBerthsAlongPiers() {
@@ -464,6 +520,11 @@ function addBerthMarkers() {
   if (!mapInstance || !L || !mapData.value?.berths) return
   clearMarkers()
 
+  const pierByName: Record<string, any> = {}
+  for (const p of drawnPiers.value) pierByName[p.name] = p
+
+  const isEdit = editMode.value
+
   for (const berth of mapData.value.berths) {
     // Skip berths without coordinates — no more floating placeholder grid
     if (berth.gpsLat == null || berth.gpsLng == null) continue
@@ -471,25 +532,48 @@ function addBerthMarkers() {
     const lng = berth.gpsLng
 
     const color = statusColors[berth.status] || '#9CA3AF'
-    const isEdit = editMode.value
+    const pier = pierByName[berth.pier]
+    // Boat lies perpendicular to pier; rectangle long axis = pier bearing + 90°
+    const rot = pier ? (pierBearing(pier) + 90) : 0
+
+    // Rectangle size: represent boat (long axis) perpendicular to pier
+    const w = isEdit ? 14 : 10 // beam (px)
+    const h = isEdit ? 28 : 20 // length (px)
+
+    // Side badge color
+    const sideColor = berth.side === 'LEFT' ? '#3B82F6'
+      : berth.side === 'RIGHT' ? '#EC4899'
+        : berth.side === 'HEAD' ? '#F59E0B'
+          : '#94A3B8'
+
+    const html = `
+      <div class="berth-marker-rot" style="transform: rotate(${rot}deg); transform-origin: center; width: ${w}px; height: ${h}px;">
+        <div class="berth-marker" style="
+          width: 100%; height: 100%; background: ${color};
+          border-radius: 3px; border: 2px solid ${isEdit ? sideColor : 'white'};
+          box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+          cursor: ${isEdit ? 'grab' : 'pointer'};
+          transition: transform 0.15s;
+          position: relative;
+        " title="${berth.code} — ${statusLabels[berth.status]}">
+          ${isEdit ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:white;font-size:8px;font-weight:700;text-shadow:0 0 2px #000;transform: rotate(${-rot}deg);">${berthShortCode(berth.code)}</div>` : ''}
+        </div>
+      </div>
+    `
 
     const icon = L.divIcon({
       className: 'berth-marker-wrapper',
-      html: `<div class="berth-marker" style="
-        width: ${isEdit ? 20 : 14}px; height: ${isEdit ? 26 : 20}px; background: ${color};
-        border-radius: 3px; border: 2px solid ${isEdit ? '#00A9A5' : 'white'};
-        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-        cursor: ${isEdit ? 'grab' : 'pointer'}; transition: transform 0.15s;
-      " title="${berth.code} — ${statusLabels[berth.status]}">
-        ${isEdit ? `<span style="position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:700;color:white;white-space:nowrap;text-shadow:0 0 3px #000,0 0 3px #000;">${berth.code}</span>` : ''}
-      </div>`,
-      iconSize: [isEdit ? 20 : 14, isEdit ? 26 : 20],
-      iconAnchor: [isEdit ? 10 : 7, isEdit ? 13 : 10]
+      html,
+      iconSize: [w, h],
+      iconAnchor: [w / 2, h / 2]
     })
 
     const marker = L.marker([lat, lng], { icon, draggable: isEdit }).addTo(mapInstance)
 
     if (isEdit) {
+      let dragged = false
+      marker.on('dragstart', () => { dragged = false })
+      marker.on('drag', () => { dragged = true })
       marker.on('dragend', async (e: any) => {
         const pos = e.target.getLatLng()
         await $fetch(`/api/berths/${berth.id}`, {
@@ -497,17 +581,55 @@ function addBerthMarkers() {
           body: { gpsLat: pos.lat, gpsLng: pos.lng }
         })
       })
+      marker.on('click', async () => {
+        if (dragged) { dragged = false; return }
+        await flipBerthSide(berth)
+      })
+    }
+    else {
+      marker.on('click', () => openBerth(berth.id))
     }
 
-    marker.on('click', () => { if (!isEdit) openBerth(berth.id) })
     marker.on('mouseover', (e: any) => {
-      e.target.getElement()?.querySelector('.berth-marker')?.style.setProperty('transform', 'scale(1.3)')
+      e.target.getElement()?.querySelector('.berth-marker')?.style.setProperty('transform', 'scale(1.25)')
     })
     marker.on('mouseout', (e: any) => {
       e.target.getElement()?.querySelector('.berth-marker')?.style.setProperty('transform', 'scale(1)')
     })
 
     markers.push(marker)
+  }
+}
+
+// Extract short code (e.g. "A01-12m" → "A01", "B-KOP-3" → "B3")
+function berthShortCode(code: string): string {
+  const m = code.match(/^([A-Za-z]+)[^0-9]*?(\d+)/)
+  if (m) return `${m[1]}${m[2]}`
+  return code.slice(0, 4)
+}
+
+async function flipBerthSide(berth: any) {
+  const current = berth.side || (berth.code.toUpperCase().includes('KOP') ? 'HEAD' : 'LEFT')
+  let next: 'LEFT' | 'RIGHT' | 'HEAD'
+  if (current === 'LEFT') next = 'RIGHT'
+  else if (current === 'RIGHT') next = 'LEFT'
+  else next = 'LEFT' // HEAD flips to LEFT
+  try {
+    await $fetch(`/api/berths/${berth.id}`, {
+      method: 'PUT',
+      body: { side: next }
+    })
+    // Recompute layout for this pier only
+    await $fetch('/api/piers/position-berths', {
+      method: 'POST',
+      body: { marinaId: marinaId.value, pierNames: [berth.pier] }
+    })
+    await refreshMapData()
+    clearMarkers()
+    addBerthMarkers()
+  }
+  catch (err) {
+    console.error('Flip side failed:', err)
   }
 }
 
@@ -691,7 +813,9 @@ const unpositionedCount = computed(() => {
         <template v-if="editMode">
           <div class="px-4 py-3 border-b border-black/[0.08]">
             <div class="text-sm font-semibold text-[#0A1520]">Steigers tekenen</div>
-            <div class="text-[11px] text-[#5A6A78] mt-0.5">Teken lijnen; sleep punten om te verplaatsen.</div>
+            <div class="text-[11px] text-[#5A6A78] mt-0.5">
+              Teken lijn, ligplaatsen verschijnen automatisch aan beide zijden. Tik een ligplaats om links↔rechts te wisselen, versleep voor fijn-positioneren.
+            </div>
             <div
               v-if="unpositionedCount > 0"
               class="mt-2 text-[11px] text-[#B45309] bg-amber-500/10 border border-amber-500/20 rounded-md px-2 py-1.5"
@@ -727,15 +851,38 @@ const unpositionedCount = computed(() => {
             <div
               v-for="pier in drawnPiers"
               :key="pier.id"
-              class="flex items-center justify-between py-1.5 text-xs"
+              class="py-2 border-t border-black/[0.05] first:border-t-0"
             >
-              <span class="font-medium text-[#0A1520]">
-                Steiger {{ pier.name }}
-                <span v-if="pier.headPoints" class="text-[#F59E0B]">+ T-kop</span>
-              </span>
-              <button class="text-red-400 hover:text-red-600 text-[10px]" @click="deletePier(pier.id)">
-                Verwijder
-              </button>
+              <div class="flex items-center justify-between text-xs mb-1.5">
+                <span class="font-medium text-[#0A1520]">
+                  Steiger {{ pier.name }}
+                  <span v-if="pier.headPoints" class="text-[#F59E0B]">+ T-kop</span>
+                </span>
+                <button class="text-red-400 hover:text-red-600 text-[10px]" @click="deletePier(pier.id)">
+                  Verwijder
+                </button>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] text-[#5A6A78] shrink-0">
+                  Breedte {{ (pier.berthOffset ?? 3.5).toFixed(1) }} m
+                </span>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  step="0.5"
+                  :value="pier.berthOffset ?? 3.5"
+                  class="flex-1 accent-primary-500 h-6"
+                  @input="(e: any) => onOffsetInput(pier, parseFloat(e.target.value))"
+                >
+                <button
+                  class="px-2 py-1 rounded-md bg-[#F4F7F8] text-[#0A1520] text-[10px] font-semibold hover:bg-black/5 shrink-0"
+                  title="Wissel alle ligplaatsen tussen links en rechts"
+                  @click="flipAllSides(pier)"
+                >
+                  ⇄
+                </button>
+              </div>
             </div>
           </div>
 
