@@ -13,6 +13,14 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return navigateTo({ path: '/login', query: to.path === '/' ? undefined : { redirect: to.fullPath } })
   }
 
+  // Huurders worden naar het portaal gestuurd
+  if (user.value.role === 'PORTAL') {
+    if (!to.path.startsWith('/portal')) {
+      return navigateTo('/portal')
+    }
+    return
+  }
+
   const needsSetup = !user.value.marina.setupComplete
   const canSetup = user.value.role === 'HARBORMASTER' || user.value.role === 'ADMIN'
 

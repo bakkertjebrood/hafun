@@ -3,6 +3,7 @@ definePageMeta({ layout: 'dashboard' })
 
 const loading = ref(true)
 const invoices = ref<any[]>([])
+const summary = ref<any>({})
 const accountingConfig = ref<any>(null)
 const customers = ref<any[]>([])
 const tariffs = ref<any[]>([])
@@ -10,6 +11,20 @@ const marinaId = ref('')
 const syncing = ref(false)
 
 const activeTab = ref<'invoices' | 'new'>('invoices')
+
+// Filters
+const today = new Date()
+const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+const filterFrom = ref(monthStart.toISOString().slice(0, 10))
+const filterTo = ref(today.toISOString().slice(0, 10))
+const filterStatus = ref('')
+const filterMethod = ref('')
+
+// Deelbetaling modal
+const paymentInvoice = ref<any>(null)
+const paymentAmount = ref(0)
+const paymentMethod = ref<'cash' | 'pin' | 'transfer' | 'creditcard' | 'online'>('transfer')
+const paymentSaving = ref(false)
 
 // New invoice form
 const newInvoice = ref({
@@ -35,8 +50,85 @@ onMounted(async () => {
 })
 
 async function fetchInvoices() {
-  const data = await $fetch('/api/invoices') as any
+  const q: Record<string, string> = {}
+  if (filterFrom.value) q.from = new Date(filterFrom.value).toISOString()
+  if (filterTo.value) {
+    const t = new Date(filterTo.value); t.setHours(23, 59, 59, 999)
+    q.to = t.toISOString()
+  }
+  if (filterStatus.value) q.status = filterStatus.value
+  if (filterMethod.value) q.method = filterMethod.value
+  const data = await $fetch('/api/invoices', { query: q }) as any
   invoices.value = data.invoices || []
+  summary.value = data.summary || {}
+}
+
+watch([filterFrom, filterTo, filterStatus, filterMethod], fetchInvoices)
+
+async function sendReminder(inv: any) {
+  if (!confirm(`Herinnering versturen voor ${inv.number}?`)) return
+  await $fetch(`/api/invoices/${inv.id}/reminder`, { method: 'POST' })
+  await fetchInvoices()
+}
+
+function copyPaymentLink(url: string) {
+  navigator.clipboard.writeText(url)
+  alert('Betaallink gekopieerd naar klembord')
+}
+
+function openPayment(inv: any) {
+  paymentInvoice.value = inv
+  paymentAmount.value = Math.max(0, inv.total - (inv.paidAmount || 0))
+  paymentMethod.value = 'transfer'
+}
+
+async function savePayment() {
+  if (!paymentInvoice.value || !paymentAmount.value) return
+  paymentSaving.value = true
+  try {
+    await $fetch('/api/payments', {
+      method: 'POST',
+      body: {
+        invoiceId: paymentInvoice.value.id,
+        amount: paymentAmount.value,
+        method: paymentMethod.value
+      }
+    })
+    paymentInvoice.value = null
+    await fetchInvoices()
+  }
+  finally {
+    paymentSaving.value = false
+  }
+}
+
+function exportCsv() {
+  const rows = [['Nummer', 'Klant', 'Datum', 'Totaal', 'Betaald', 'Openstaand', 'Status', 'Herinneringen']]
+  for (const inv of invoices.value) {
+    const outstanding = inv.total - (inv.paidAmount || 0)
+    rows.push([
+      inv.number || '',
+      inv.customer?.name || '',
+      new Date(inv.createdAt).toLocaleDateString('nl-NL'),
+      String(inv.total),
+      String(inv.paidAmount || 0),
+      String(outstanding),
+      inv.status,
+      String(inv.reminderCount || 0)
+    ])
+  }
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n')
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `facturen-${filterFrom.value}-${filterTo.value}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function printInvoices() {
+  window.print()
 }
 
 async function fetchConfig() {
@@ -198,6 +290,53 @@ function formatDate(d: string) {
       </NuxtLink>
     </div>
 
+    <!-- Summary + filters -->
+    <div v-if="activeTab === 'invoices'" class="print:hidden">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+        <div class="bg-white border border-black/[0.08] rounded-[10px] px-3 py-2">
+          <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold">Ontvangen</div>
+          <div class="text-sm font-semibold text-[#0A1520]">{{ formatCurrency(summary.totalRevenue || 0) }}</div>
+        </div>
+        <div class="bg-white border border-black/[0.08] rounded-[10px] px-3 py-2">
+          <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold">Open</div>
+          <div class="text-sm font-semibold text-[#F59E0B]">{{ formatCurrency(summary.totalOutstanding || 0) }}</div>
+        </div>
+        <div class="bg-white border border-black/[0.08] rounded-[10px] px-3 py-2">
+          <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold">Verlopen</div>
+          <div class="text-sm font-semibold text-[#EF4444]">{{ summary.overdueCount || 0 }}</div>
+        </div>
+        <div class="bg-white border border-black/[0.08] rounded-[10px] px-3 py-2">
+          <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold">Betaald</div>
+          <div class="text-sm font-semibold text-[#10B981]">{{ summary.paidCount || 0 }}</div>
+        </div>
+      </div>
+
+      <div class="flex gap-2 mb-3 flex-wrap items-center">
+        <input v-model="filterFrom" type="date" class="px-3 py-2 text-xs rounded-lg border border-black/[0.1] bg-white">
+        <span class="text-xs text-[#5A6A78]">t/m</span>
+        <input v-model="filterTo" type="date" class="px-3 py-2 text-xs rounded-lg border border-black/[0.1] bg-white">
+        <select v-model="filterStatus" class="px-3 py-2 text-xs rounded-lg border border-black/[0.1] bg-white">
+          <option value="">Alle statussen</option>
+          <option v-for="(label, key) in statusLabels" :key="key" :value="key">{{ label }}</option>
+        </select>
+        <select v-model="filterMethod" class="px-3 py-2 text-xs rounded-lg border border-black/[0.1] bg-white">
+          <option value="">Alle methodes</option>
+          <option value="cash">Contant</option>
+          <option value="pin">PIN</option>
+          <option value="transfer">Overschrijving</option>
+          <option value="creditcard">Creditcard</option>
+          <option value="online">Online</option>
+        </select>
+        <div class="flex-1" />
+        <button class="px-3 py-2 rounded-lg bg-[#F4F7F8] text-[#5A6A78] text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-black/5" @click="exportCsv">
+          <UIcon name="i-lucide-download" class="size-3.5" /> Export CSV
+        </button>
+        <button class="px-3 py-2 rounded-lg bg-[#F4F7F8] text-[#5A6A78] text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-black/5" @click="printInvoices">
+          <UIcon name="i-lucide-printer" class="size-3.5" /> Print
+        </button>
+      </div>
+    </div>
+
     <!-- Invoice list -->
     <div v-if="activeTab === 'invoices'" class="bg-white border border-black/[0.08] rounded-[14px] overflow-hidden">
       <div
@@ -208,11 +347,18 @@ function formatDate(d: string) {
       >
         <span class="w-2 h-2 rounded-full shrink-0" :style="{ background: statusColors[inv.status] || '#5A6A78' }" />
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-semibold text-[#0A1520]">{{ inv.number || inv.description || 'Factuur' }}</div>
+          <div class="text-sm font-semibold text-[#0A1520] flex items-center gap-2">
+            {{ inv.number || inv.description || 'Factuur' }}
+            <span v-if="inv.reminderCount > 0" class="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-600 font-semibold">{{ inv.reminderCount }}× herinnerd</span>
+          </div>
           <div class="text-xs text-[#5A6A78]">
             {{ inv.customer?.name || 'Onbekend' }}
             · {{ formatDate(inv.createdAt) }}
+            <span v-if="inv.dueDate"> · vervalt {{ formatDate(inv.dueDate) }}</span>
             <span v-if="inv.syncedAt" class="text-[#5A6A78]/60"> · gesynct {{ formatDate(inv.syncedAt) }}</span>
+          </div>
+          <div v-if="inv.paidAmount > 0 && inv.paidAmount < inv.total" class="text-[11px] text-emerald-600 mt-0.5">
+            {{ formatCurrency(inv.paidAmount) }} voldaan · nog {{ formatCurrency(inv.total - inv.paidAmount) }}
           </div>
         </div>
         <div class="text-sm font-semibold text-[#0A1520] shrink-0">{{ formatCurrency(inv.total) }}</div>
@@ -222,19 +368,69 @@ function formatDate(d: string) {
         >
           {{ statusLabels[inv.status] || inv.status }}
         </span>
-        <a
-          v-if="inv.externalUrl"
-          :href="inv.externalUrl"
-          target="_blank"
-          class="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0 hover:bg-black/10"
-        >
-          Bekijk ↗
-        </a>
+
+        <div class="flex gap-1 shrink-0 print:hidden">
+          <button
+            v-if="inv.status !== 'paid' && inv.status !== 'draft'"
+            class="px-2 py-1 rounded-full text-[10px] font-semibold bg-[#F4F7F8] text-[#5A6A78] hover:bg-emerald-500/10 hover:text-emerald-600"
+            title="Deelbetaling registreren"
+            @click="openPayment(inv)"
+          >€</button>
+          <button
+            v-if="inv.paymentUrl"
+            class="px-2 py-1 rounded-full text-[10px] font-semibold bg-[#F4F7F8] text-[#5A6A78] hover:bg-primary-500/10 hover:text-primary-500"
+            title="Betaallink kopiëren"
+            @click="copyPaymentLink(inv.paymentUrl)"
+          >
+            <UIcon name="i-lucide-link" class="size-3" />
+          </button>
+          <button
+            v-if="inv.status !== 'paid' && inv.status !== 'draft'"
+            class="px-2 py-1 rounded-full text-[10px] font-semibold bg-[#F4F7F8] text-[#5A6A78] hover:bg-amber-500/10 hover:text-amber-600"
+            title="Herinnering versturen"
+            @click="sendReminder(inv)"
+          >
+            <UIcon name="i-lucide-bell" class="size-3" />
+          </button>
+          <a
+            v-if="inv.externalUrl"
+            :href="inv.externalUrl"
+            target="_blank"
+            class="px-2 py-1 rounded-full text-[10px] font-semibold bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/10"
+          >↗</a>
+        </div>
       </div>
       <div v-if="!invoices.length" class="px-5 py-12 text-center text-sm text-[#5A6A78]">
-        Nog geen facturen verstuurd
+        Geen facturen in deze periode
       </div>
     </div>
+
+    <!-- Deelbetaling modal -->
+    <Teleport to="body">
+      <div v-if="paymentInvoice" class="fixed inset-0 z-[1000] bg-black/40 flex items-center justify-center p-4" @click.self="paymentInvoice = null">
+        <div class="bg-white rounded-[14px] max-w-md w-full p-5">
+          <div class="text-sm font-semibold text-[#0A1520] mb-1">Deelbetaling registreren</div>
+          <div class="text-xs text-[#5A6A78] mb-4">{{ paymentInvoice.number }} · {{ paymentInvoice.customer?.name }}</div>
+          <div class="text-xs text-[#5A6A78] mb-3">
+            Totaal: {{ formatCurrency(paymentInvoice.total) }} · Reeds voldaan: {{ formatCurrency(paymentInvoice.paidAmount || 0) }}
+          </div>
+          <label class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold">Bedrag</label>
+          <input v-model.number="paymentAmount" type="number" step="0.01" class="w-full mt-1 mb-3 px-3 py-2 text-sm rounded-lg border border-black/[0.1]">
+          <label class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold">Methode</label>
+          <select v-model="paymentMethod" class="w-full mt-1 px-3 py-2 text-sm rounded-lg border border-black/[0.1]">
+            <option value="cash">Contant</option>
+            <option value="pin">PIN</option>
+            <option value="transfer">Overschrijving</option>
+            <option value="creditcard">Creditcard</option>
+            <option value="online">Online</option>
+          </select>
+          <div class="flex justify-end gap-2 mt-4">
+            <UButton color="neutral" variant="outline" size="sm" @click="paymentInvoice = null">Annuleren</UButton>
+            <UButton color="primary" size="sm" :loading="paymentSaving" @click="savePayment">Opslaan</UButton>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- New invoice form -->
     <div v-if="activeTab === 'new' && accountingConfig?.hasToken" class="max-w-2xl">

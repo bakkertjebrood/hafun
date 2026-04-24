@@ -136,7 +136,7 @@ export default defineEventHandler(async (event) => {
       title: `Factuur ${inv.number} verlopen`,
       sub: `${inv.customer?.name || 'Onbekend'} · €${(inv.total - inv.paidAmount).toFixed(0)}`,
       color: '#EF4444',
-      createdAt: inv.dueDate
+      createdAt: inv.dueDate || inv.createdAt
     })
   }
 

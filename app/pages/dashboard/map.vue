@@ -29,13 +29,19 @@ let drawHeadPolyline: any = null
 let drawPreviewLine: any = null
 
 const statusColors: Record<string, string> = {
-  FREE: '#10B981', OCCUPIED: '#EF4444', SEASONAL: '#F59E0B',
-  STORAGE: '#8B5CF6', TEMPORARY: '#F97316', EMPTY: '#9CA3AF', RELOCATED: '#6366F1'
+  FREE: '#10B981', OCCUPIED: '#EF4444', PASSANT: '#EC4899', SEASONAL: '#F59E0B',
+  STORAGE: '#8B5CF6', TEMPORARY: '#F97316', EMPTY: '#9CA3AF', RELOCATED: '#6366F1',
+  MELDING: '#F43F5E'
 }
 const statusLabels: Record<string, string> = {
-  FREE: 'Vrij', OCCUPIED: 'Bezet', SEASONAL: 'Seizoen',
-  STORAGE: 'Stalling', TEMPORARY: 'Tijdelijk', EMPTY: 'Leeg', RELOCATED: 'Verplaatst'
+  FREE: 'Vrij', OCCUPIED: 'Klant', PASSANT: 'Passant', SEASONAL: 'Zomer',
+  STORAGE: 'Stalling', TEMPORARY: 'Tijdelijk', EMPTY: 'Leeg', RELOCATED: 'Verplaatst',
+  MELDING: 'Melding'
 }
+
+// Datumfilter — bekijk de bezetting op een andere dag
+const viewDate = ref('')
+const showLegend = ref(true)
 
 // Facility catalog: type → label, emoji marker glyph, brand color
 interface FacilityDef { label: string, glyph: string, color: string }
@@ -95,7 +101,7 @@ onMounted(async () => {
   try {
     const discovered = await $fetch('/api/berths/discover') as any
     marinaId.value = discovered.marinaId
-    mapData.value = await $fetch('/api/map/status', { query: { marinaId: marinaId.value } })
+    mapData.value = await $fetch('/api/map/status', { query: { marinaId: marinaId.value, ...(viewDate.value ? { date: viewDate.value } : {}) } })
   } catch (e) {
     console.error('Could not discover marina:', e)
   }
@@ -143,8 +149,13 @@ function onKeyDown(e: KeyboardEvent) {
 
 async function refreshMapData() {
   if (!marinaId.value) return
-  mapData.value = await $fetch('/api/map/status', { query: { marinaId: marinaId.value } })
+  mapData.value = await $fetch('/api/map/status', { query: { marinaId: marinaId.value, ...(viewDate.value ? { date: viewDate.value } : {}) } })
 }
+
+watch(viewDate, async () => {
+  await refreshMapData()
+  addBerthMarkers()
+})
 
 function initMap() {
   if (!mapContainer.value || !L) return
@@ -669,7 +680,8 @@ function addBerthMarkers() {
     const lat = berth.gpsLat
     const lng = berth.gpsLng
 
-    const color = statusColors[berth.status] || '#9CA3AF'
+    const status = berth.displayStatus || berth.status
+    const color = statusColors[status] || '#9CA3AF'
     const pier = pierByName[berth.pier]
     // Boat lies perpendicular to pier; rectangle long axis = pier bearing + 90°
     const rot = pier ? (pierBearing(pier) + 90) : 0
@@ -696,7 +708,7 @@ function addBerthMarkers() {
           cursor: ${isEdit ? 'grab' : 'pointer'};
           transition: transform 0.15s;
           position: relative;
-        " title="${berth.code} — ${statusLabels[berth.status]}">
+        " title="${berth.code} — ${statusLabels[status] || status}">
           ${isEdit ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:white;font-size:8px;font-weight:700;text-shadow:0 0 2px #000;transform: rotate(${-rot}deg);">${berthShortCode(berth.code)}</div>` : ''}
         </div>
       </div>
@@ -1351,6 +1363,40 @@ function rejectSuggestion(idx: number) {
           {{ aiAnalyzing ? 'AI analyseert...' : 'AI analyse' }}
         </button>
 
+        <!-- Date filter -->
+        <div class="flex items-center gap-1 shrink-0">
+          <input
+            v-model="viewDate"
+            type="date"
+            title="Bezetting op datum"
+            class="px-2 py-1 text-[11px] rounded-md border border-black/[0.08] bg-white"
+          >
+          <button
+            v-if="viewDate"
+            class="text-[10px] text-[#5A6A78] hover:text-[#0A1520] px-1"
+            title="Datumfilter opheffen"
+            @click="viewDate = ''"
+          >×</button>
+        </div>
+
+        <button
+          class="px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0"
+          :class="showLegend ? '!bg-primary-500/10 !text-primary-600' : ''"
+          title="Legenda"
+          @click="showLegend = !showLegend"
+        >
+          Legenda
+        </button>
+
+        <NuxtLink
+          to="/dashboard/map-tv"
+          target="_blank"
+          class="px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0 inline-flex items-center gap-1"
+          title="TV-modus (fullscreen)"
+        >
+          <UIcon name="i-lucide-tv" class="size-3" /> TV
+        </NuxtLink>
+
         <!-- Status counts (hidden on small mobile) -->
         <div class="hidden sm:flex gap-1">
           <span
@@ -1365,6 +1411,35 @@ function rejectSuggestion(idx: number) {
             />
             {{ count }}
           </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Legenda-paneel -->
+    <div
+      v-if="showLegend"
+      class="absolute z-[500] top-20 right-4 bg-white/95 backdrop-blur-sm border border-black/[0.08] rounded-[12px] shadow-lg p-3 w-[200px]"
+    >
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-[11px] uppercase tracking-widest text-[#5A6A78] font-semibold">Legenda</div>
+        <button class="text-[#5A6A78] hover:text-[#0A1520]" @click="showLegend = false">
+          <UIcon name="i-lucide-x" class="size-3.5" />
+        </button>
+      </div>
+      <div v-if="viewDate" class="text-[10px] text-primary-600 mb-2">
+        Bezetting op {{ new Date(viewDate).toLocaleDateString('nl-NL') }}
+      </div>
+      <div class="space-y-1">
+        <div
+          v-for="(label, key) in statusLabels"
+          :key="key"
+          class="flex items-center justify-between text-[11px]"
+        >
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: statusColors[key] }" />
+            <span class="text-[#0A1520]">{{ label }}</span>
+          </div>
+          <span class="font-mono font-semibold text-[#5A6A78]">{{ counts[key] ?? 0 }}</span>
         </div>
       </div>
     </div>

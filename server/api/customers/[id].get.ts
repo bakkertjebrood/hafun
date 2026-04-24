@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
         }
       },
       invoices: {
-        orderBy: { date: 'desc' },
+        orderBy: { createdAt: 'desc' },
         take: 10,
         include: { _count: { select: { payments: true } } }
       }

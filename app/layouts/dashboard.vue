@@ -6,10 +6,19 @@ const { user, initials, fullName, roleLabel, logout } = useAuthUser()
 const navigation = [
   { label: 'Overzicht', icon: 'i-lucide-layout-dashboard', to: '/dashboard' },
   { label: 'Kaart', icon: 'i-lucide-map', to: '/dashboard/map' },
+  { label: 'Agenda', icon: 'i-lucide-calendar', to: '/dashboard/agenda' },
   { label: 'Reserveringen', icon: 'i-lucide-calendar-check', to: '/dashboard/bookings' },
   { label: 'Huurders', icon: 'i-lucide-users', to: '/dashboard/customers' },
+  { label: 'Wachtlijst', icon: 'i-lucide-list-checks', to: '/dashboard/waitlist' },
+  { label: 'Offertes', icon: 'i-lucide-file-text', to: '/dashboard/quotes' },
+  { label: 'Werkbonnen', icon: 'i-lucide-wrench', to: '/dashboard/workorders' },
+  { label: 'Kassa', icon: 'i-lucide-shopping-cart', to: '/dashboard/pos' },
+  { label: 'Standen', icon: 'i-lucide-gauge', to: '/dashboard/meters' },
+  { label: 'Fotobord', icon: 'i-lucide-images', to: '/dashboard/photoboard' },
   { label: 'Facturatie', icon: 'i-lucide-receipt', to: '/dashboard/financial' },
+  { label: 'Dagafsluiting', icon: 'i-lucide-calculator', to: '/dashboard/closing' },
   { label: 'Meldingen', icon: 'i-lucide-bell', to: '/dashboard/notifications' },
+  { label: 'Mutatielog', icon: 'i-lucide-history', to: '/dashboard/audit' },
   { label: 'Beheer', icon: 'i-lucide-settings', to: '/dashboard/settings' }
 ]
 
