@@ -94,7 +94,7 @@ const outstanding = computed(() => {
               v-for="(b, i) in data.customer.boats"
               :key="b.id"
               class="px-5 py-3 flex items-center gap-3"
-              :class="i < data.customer.boats.length - 1 ? 'border-b border-black/[0.08]' : ''"
+              :class="i < (data.customer.boats.length as number) - 1 ? 'border-b border-black/[0.08]' : ''"
             >
               <UIcon name="i-lucide-sailboat" class="size-5 text-primary-500" />
               <div class="flex-1">
@@ -115,7 +115,7 @@ const outstanding = computed(() => {
               v-for="(b, i) in data.customer.berths"
               :key="b.id"
               class="px-5 py-3 flex items-center gap-3"
-              :class="i < data.customer.berths.length - 1 ? 'border-b border-black/[0.08]' : ''"
+              :class="i < (data.customer.berths.length as number) - 1 ? 'border-b border-black/[0.08]' : ''"
             >
               <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-primary-500/10 text-primary-500">{{ b.code }}</span>
               <div class="text-xs text-[#5A6A78]">{{ b.length }}m × {{ b.width }}m · Steiger {{ b.pier }}</div>
@@ -132,7 +132,7 @@ const outstanding = computed(() => {
               v-for="(inv, i) in data.customer.invoices"
               :key="inv.id"
               class="px-5 py-3 flex items-center gap-3"
-              :class="i < data.customer.invoices.length - 1 ? 'border-b border-black/[0.08]' : ''"
+              :class="i < (data.customer.invoices.length as number) - 1 ? 'border-b border-black/[0.08]' : ''"
             >
               <div class="flex-1 min-w-0">
                 <div class="text-sm font-semibold text-[#0A1520]">{{ inv.number || 'Factuur' }}</div>
@@ -160,7 +160,7 @@ const outstanding = computed(() => {
               v-for="(n, i) in data.notes"
               :key="n.id"
               class="px-5 py-3"
-              :class="i < data.notes.length - 1 ? 'border-b border-black/[0.08]' : ''"
+              :class="i < (data.notes.length as number) - 1 ? 'border-b border-black/[0.08]' : ''"
             >
               <div class="text-xs text-[#0A1520]">{{ n.text }}</div>
               <div class="text-[11px] text-[#5A6A78] mt-1">{{ formatDate(n.createdAt) }} · {{ n.author.firstName }} {{ n.author.lastName }}</div>

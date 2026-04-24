@@ -36,16 +36,16 @@ export default defineEventHandler(async (event) => {
 
   const paymentsByMethod: Record<string, { count: number; total: number }> = {}
   for (const p of payments) {
-    paymentsByMethod[p.method] ||= { count: 0, total: 0 }
-    paymentsByMethod[p.method].count++
-    paymentsByMethod[p.method].total += p.amount
+    const entry = paymentsByMethod[p.method] ?? (paymentsByMethod[p.method] = { count: 0, total: 0 })
+    entry.count++
+    entry.total += p.amount
   }
 
   const posByMethod: Record<string, { count: number; total: number }> = {}
   for (const t of posTransactions) {
-    posByMethod[t.method] ||= { count: 0, total: 0 }
-    posByMethod[t.method].count++
-    posByMethod[t.method].total += t.total
+    const entry = posByMethod[t.method] ?? (posByMethod[t.method] = { count: 0, total: 0 })
+    entry.count++
+    entry.total += t.total
   }
 
   const arrivals = bookings.filter(b => {

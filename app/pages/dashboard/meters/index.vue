@@ -131,7 +131,7 @@ function formatDate(d: string) {
         v-for="(r, i) in readings"
         :key="r.id"
         class="px-5 py-3 flex items-center gap-4"
-        :class="i < readings.length - 1 ? 'border-b border-black/[0.08]' : ''"
+        :class="i < (readings.length as number) - 1 ? 'border-b border-black/[0.08]' : ''"
       >
         <div
           class="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
@@ -142,7 +142,7 @@ function formatDate(d: string) {
         <div class="flex-1 min-w-0">
           <div class="text-sm font-semibold text-[#0A1520]">
             <span v-if="r.berth">{{ r.berth.code }} — </span>{{ r.value }}
-            <span class="text-xs text-[#5A6A78] font-normal ml-1">{{ typeLabels[r.type].split(' ').pop() }}</span>
+            <span class="text-xs text-[#5A6A78] font-normal ml-1">{{ (typeLabels[r.type] || '').split(' ').pop() }}</span>
           </div>
           <div class="text-xs text-[#5A6A78] mt-0.5">
             {{ formatDate(r.readAt) }}
