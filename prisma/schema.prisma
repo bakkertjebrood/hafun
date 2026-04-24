@@ -23,18 +23,27 @@ model Marina {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  users      User[]
-  berths     Berth[]
-  customers  Customer[]
-  boats      Boat[]
-  bookings   Booking[]
-  guests     Guest[]
-  invoices   Invoice[]
-  notes      Note[]
-  pierLines  PierLine[]
-  tariffs    Tariff[]
-  facilities Facility[]
-  accounting AccountingIntegration?
+  users          User[]
+  berths         Berth[]
+  customers      Customer[]
+  boats          Boat[]
+  bookings       Booking[]
+  guests         Guest[]
+  invoices       Invoice[]
+  notes          Note[]
+  pierLines      PierLine[]
+  tariffs        Tariff[]
+  facilities     Facility[]
+  accounting     AccountingIntegration?
+  waitlist       WaitlistEntry[]
+  agendaEvents   AgendaEvent[]
+  quotes         Quote[]
+  workOrders     WorkOrder[]
+  meterReadings  MeterReading[]
+  auditLogs      AuditLog[]
+  posProducts    PosProduct[]
+  posTransactions PosTransaction[]
+  payments       Payment[]
 }
 
 // Pier geometry — drawn on the map
@@ -112,12 +121,17 @@ model User {
   role         Role     @default(STAFF)
   firstName    String?
   lastName     String?
+  locale       String   @default("nl")   // nl, en, fr, de, sv
+  emailFooter  String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  marina   Marina @relation(fields: [marinaId], references: [id])
-  notes    Note[]
-  customer Customer?
+  marina      Marina        @relation(fields: [marinaId], references: [id])
+  notes       Note[]
+  customer    Customer?
+  auditLogs   AuditLog[]
+  agendaEvents AgendaEvent[]
+  workOrders  WorkOrder[]   @relation("WorkOrderAssignee")
 
   @@index([marinaId])
 }
@@ -154,6 +168,8 @@ model Berth {
   boat     Boat?     @relation(fields: [boatId], references: [id])
   notes    Note[]
   bookings Booking[]
+  meterReadings MeterReading[]
+  workOrders WorkOrder[]
 
   @@index([marinaId])
   @@index([marinaId, pier])
@@ -183,6 +199,9 @@ model Customer {
   berths     Berth[]
   bookings   Booking[]
   invoices   Invoice[]
+  quotes     Quote[]
+  workOrders WorkOrder[]
+  meterReadings MeterReading[]
 
   @@index([marinaId])
 }
@@ -200,10 +219,11 @@ model Boat {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  marina   Marina    @relation(fields: [marinaId], references: [id])
-  customer Customer? @relation(fields: [customerId], references: [id])
-  berths   Berth[]
-  bookings Booking[]
+  marina     Marina    @relation(fields: [marinaId], references: [id])
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  berths     Berth[]
+  bookings   Booking[]
+  workOrders WorkOrder[]
 
   @@index([marinaId])
 }
@@ -267,24 +287,48 @@ model AccountingIntegration {
 
 // Light invoice reference — points to external accounting system
 model Invoice {
-  id           String   @id @default(uuid())
-  marinaId     String
-  customerId   String?
-  externalId   String?  // ID in external system (Moneybird invoice ID)
-  externalUrl  String?  // Direct link to invoice in external system
-  number       String?
-  description  String?  // "Jaarplaats A01 — 2026"
-  total        Float
-  status       String   @default("draft") // draft, sent, paid, overdue
-  syncedAt     DateTime? // last sync with external system
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default(uuid())
+  marinaId      String
+  customerId    String?
+  externalId    String?  // ID in external system (Moneybird invoice ID)
+  externalUrl   String?  // Direct link to invoice in external system
+  paymentUrl    String?  // Public payment link
+  number        String?
+  description   String?  // "Jaarplaats A01 — 2026"
+  total         Float
+  paidAmount    Float    @default(0)
+  status        String   @default("draft") // draft, sent, paid, overdue
+  dueDate       DateTime?
+  reminderCount Int      @default(0)
+  lastReminder  DateTime?
+  syncedAt      DateTime? // last sync with external system
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   marina   Marina    @relation(fields: [marinaId], references: [id])
   customer Customer? @relation(fields: [customerId], references: [id])
+  payments Payment[]
 
   @@unique([marinaId, number])
   @@index([marinaId])
+}
+
+// Deelbetalingen op een factuur
+model Payment {
+  id         String   @id @default(uuid())
+  marinaId   String
+  invoiceId  String
+  amount     Float
+  method     String   // cash, pin, transfer, creditcard, online
+  reference  String?
+  paidAt     DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  marina  Marina  @relation(fields: [marinaId], references: [id])
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([marinaId])
+  @@index([invoiceId])
 }
 
 model Note {
@@ -329,4 +373,191 @@ model Tariff {
   marina Marina @relation(fields: [marinaId], references: [id])
 
   @@index([marinaId])
+}
+
+// Wachtlijst voor ligplaatsen
+model WaitlistEntry {
+  id          String   @id @default(uuid())
+  marinaId    String
+  name        String
+  email       String?
+  phone       String?
+  boatLength  Float?
+  boatWidth   Float?
+  boatType    String?
+  preferredPier String?
+  notes       String?
+  priority    Int      @default(0)
+  status      String   @default("waiting") // waiting, offered, accepted, rejected, archived
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  marina Marina @relation(fields: [marinaId], references: [id])
+
+  @@index([marinaId])
+}
+
+// Agenda / kalender
+enum AgendaEventType {
+  MEETING
+  MAINTENANCE
+  EVENT
+  REMINDER
+  ARRIVAL
+  DEPARTURE
+  OTHER
+}
+
+model AgendaEvent {
+  id          String          @id @default(uuid())
+  marinaId    String
+  title       String
+  description String?
+  type        AgendaEventType @default(OTHER)
+  startAt     DateTime
+  endAt       DateTime?
+  allDay      Boolean         @default(false)
+  location    String?
+  authorId    String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  marina Marina @relation(fields: [marinaId], references: [id])
+  author User   @relation(fields: [authorId], references: [id])
+
+  @@index([marinaId])
+  @@index([marinaId, startAt])
+}
+
+// Offertes
+model Quote {
+  id          String   @id @default(uuid())
+  marinaId    String
+  customerId  String?
+  number      String?
+  title       String
+  description String?
+  lines       Json     // [{description, quantity, unitPrice, vatRate}]
+  total       Float
+  status      String   @default("draft") // draft, sent, accepted, rejected, expired
+  validUntil  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  marina   Marina    @relation(fields: [marinaId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([marinaId])
+}
+
+// Werkbonnen
+model WorkOrder {
+  id          String   @id @default(uuid())
+  marinaId    String
+  customerId  String?
+  boatId      String?
+  berthId     String?
+  number      String?
+  title       String
+  description String?
+  priority    String   @default("normal") // low, normal, high, urgent
+  status      String   @default("open")   // open, in_progress, done, invoiced, cancelled
+  assigneeId  String?
+  lines       Json?    // [{description, quantity, unitPrice, vatRate}]
+  scheduledAt DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  marina   Marina    @relation(fields: [marinaId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+  boat     Boat?     @relation(fields: [boatId], references: [id])
+  berth    Berth?    @relation(fields: [berthId], references: [id])
+  assignee User?     @relation("WorkOrderAssignee", fields: [assigneeId], references: [id])
+
+  @@index([marinaId])
+}
+
+// Standen-log (stroom / water meterstanden per ligplaats)
+enum MeterType {
+  ELECTRICITY
+  WATER
+  GAS
+}
+
+model MeterReading {
+  id        String    @id @default(uuid())
+  marinaId  String
+  berthId   String?
+  customerId String?
+  type      MeterType
+  value     Float
+  readAt    DateTime  @default(now())
+  note      String?
+  authorId  String?
+  createdAt DateTime  @default(now())
+
+  marina   Marina    @relation(fields: [marinaId], references: [id])
+  berth    Berth?    @relation(fields: [berthId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([marinaId])
+  @@index([berthId])
+}
+
+// Mutatielog / audit-log
+model AuditLog {
+  id         String   @id @default(uuid())
+  marinaId   String
+  userId     String?
+  entity     String   // "Customer", "Berth", "Invoice", ...
+  entityId   String?
+  action     String   // "create", "update", "delete", "login", ...
+  diff       Json?    // {before, after} of {field: value}
+  createdAt  DateTime @default(now())
+
+  marina Marina @relation(fields: [marinaId], references: [id])
+  user   User?  @relation(fields: [userId], references: [id])
+
+  @@index([marinaId])
+  @@index([marinaId, entity])
+}
+
+// Kassa / POS — producten
+model PosProduct {
+  id         String   @id @default(uuid())
+  marinaId   String
+  name       String
+  category   String?  // "drank", "ijs", "technisch", ...
+  price      Float
+  vatRate    Float    @default(21)
+  stock      Int?
+  barcode    String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  marina Marina @relation(fields: [marinaId], references: [id])
+
+  @@index([marinaId])
+}
+
+// Kassa / POS — transacties
+model PosTransaction {
+  id         String   @id @default(uuid())
+  marinaId   String
+  cashierId  String?
+  customerId String?
+  lines      Json     // [{productId, name, quantity, unitPrice, vatRate}]
+  subtotal   Float
+  vatAmount  Float
+  total      Float
+  method     String   // cash, pin, creditcard, invoice, online
+  note       String?
+  createdAt  DateTime @default(now())
+
+  marina Marina @relation(fields: [marinaId], references: [id])
+
+  @@index([marinaId])
+  @@index([marinaId, createdAt])
 }
