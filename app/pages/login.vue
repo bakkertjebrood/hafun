@@ -42,7 +42,9 @@ async function onSubmit() {
   <div class="min-h-[100dvh] bg-[#F4F7F8] flex items-center justify-center px-4">
     <div class="w-full max-w-[400px]">
       <div class="flex justify-center mb-8">
-        <NautarLogo :size="22" />
+        <NuxtLink to="/">
+          <NautarLogo :size="22" />
+        </NuxtLink>
       </div>
       <div class="bg-white border border-black/[0.08] rounded-[16px] p-6 lg:p-7">
         <h1 class="text-xl font-semibold tracking-tight text-[#0A1520] mb-1">Inloggen</h1>
@@ -86,6 +88,13 @@ async function onSubmit() {
             {{ submitting ? 'Bezig...' : 'Inloggen' }}
           </button>
         </form>
+
+        <div class="mt-5 pt-5 border-t border-black/[0.06] text-center text-sm text-[#2D3E4A]">
+          Nog geen account?
+          <NuxtLink to="/register" class="text-primary-600 hover:text-primary-700 font-medium">
+            Registreer je haven
+          </NuxtLink>
+        </div>
       </div>
     </div>
   </div>
