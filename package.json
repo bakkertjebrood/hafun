@@ -30,6 +30,7 @@
     "maplibre-gl": "^5.23.0",
     "nuxt": "^4.4.2",
     "pdfkit": "^0.18.0",
+    "stripe": "^22.1.0",
     "tailwindcss": "^4.2.2"
   },
   "devDependencies": {

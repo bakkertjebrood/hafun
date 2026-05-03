@@ -49,8 +49,11 @@ export default defineNuxtConfig({
     postmarkApiKey: process.env.POSTMARK_API_KEY || '',
     emailFrom: process.env.EMAIL_FROM || 'no-reply@nautar.nl',
     appUrl: process.env.APP_URL || '',
+    stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
+    stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
     public: {
-      googleEnabled: !!process.env.GOOGLE_CLIENT_ID
+      googleEnabled: !!process.env.GOOGLE_CLIENT_ID,
+      stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || ''
     }
   },
 

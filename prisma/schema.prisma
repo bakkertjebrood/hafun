@@ -16,7 +16,10 @@ model Marina {
   name             String
   slug             String   @unique
   settings         Json?
-  subscriptionPlan String?
+  subscriptionPlan String?  // starter, professional, enterprise
+  stripeCustomerId String?  @unique
+  stripeSubscriptionId String?
+  stripeCurrentPeriodEnd DateTime?
   gpsLat           Float?
   gpsLng           Float?
   setupComplete    Boolean  @default(false)
