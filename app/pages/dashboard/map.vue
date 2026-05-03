@@ -2071,11 +2071,25 @@ function rejectSuggestion(idx: number) {
 
     <!-- Map + inline slide-over -->
     <div class="flex-1 flex overflow-hidden min-h-0">
+      <!-- Mobile backdrop -->
+      <div
+        v-if="showPanel"
+        class="lg:hidden fixed inset-0 z-[990] bg-black/30"
+        @click="showPanel = false"
+      />
       <!-- Left panel: berths OR pier tools (inline on desktop, overlay on mobile) -->
       <div
         class="bg-white border-r border-black/[0.08] flex flex-col overflow-y-auto transition-transform duration-300 fixed top-0 left-0 h-full w-[280px] z-[1000] shadow-lg lg:static lg:inset-auto lg:h-full lg:z-auto lg:shadow-none lg:shrink-0 lg:translate-x-0"
         :class="showPanel ? 'translate-x-0' : '-translate-x-full'"
       >
+        <!-- Mobile close button -->
+        <button
+          class="lg:hidden absolute top-2 right-2 z-10 w-8 h-8 rounded-full hover:bg-black/[0.05] flex items-center justify-center"
+          aria-label="Sluiten"
+          @click="showPanel = false"
+        >
+          <UIcon name="i-lucide-x" class="size-5 text-[#0A1520]" />
+        </button>
         <!-- Edit mode: pier drawing tools -->
         <template v-if="editMode">
           <div class="px-4 py-3 border-b border-black/[0.08]">
@@ -2537,15 +2551,14 @@ function rejectSuggestion(idx: number) {
           class="w-full h-full"
         />
 
-        <!-- Mobile panel toggle -->
+        <!-- Mobile panel toggle (only shown when closed; close lives inside the panel) -->
         <button
+          v-if="!showPanel"
           class="lg:hidden absolute top-3 left-3 z-[800] w-10 h-10 bg-white/95 backdrop-blur-sm rounded-full border border-black/[0.08] shadow-lg flex items-center justify-center"
-          @click="showPanel = !showPanel"
+          aria-label="Ligplaatsen openen"
+          @click="showPanel = true"
         >
-          <UIcon
-            :name="showPanel ? 'i-lucide-x' : 'i-lucide-list'"
-            class="size-5 text-[#0A1520]"
-          />
+          <UIcon name="i-lucide-list" class="size-5 text-[#0A1520]" />
         </button>
 
         <!-- Setup wizard CTA when marina has no piers yet -->

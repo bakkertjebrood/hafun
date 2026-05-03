@@ -122,11 +122,21 @@ watch(route, () => { mobileMenuOpen.value = false })
       >
         <div class="absolute inset-0 bg-black/30" />
         <div
-          class="absolute bottom-0 left-0 right-0 bg-white rounded-t-[20px] pb-8 safe-bottom"
+          class="absolute bottom-0 left-0 right-0 bg-white rounded-t-[20px] pb-8 safe-bottom flex flex-col max-h-[85dvh]"
           @click.stop
         >
-          <div class="w-10 h-1 rounded-full bg-black/10 mx-auto mt-3 mb-4" />
-          <nav class="px-4 flex flex-col gap-1">
+          <div class="relative shrink-0">
+            <div class="w-10 h-1 rounded-full bg-black/10 mx-auto mt-3 mb-4" />
+            <button
+              type="button"
+              class="absolute top-2 right-3 w-8 h-8 rounded-full hover:bg-black/[0.05] flex items-center justify-center"
+              aria-label="Sluiten"
+              @click="mobileMenuOpen = false"
+            >
+              <UIcon name="i-lucide-x" class="size-5 text-[#0A1520]" />
+            </button>
+          </div>
+          <nav class="px-4 flex flex-col gap-1 overflow-y-auto flex-1 min-h-0">
             <NuxtLink
               v-for="item in navigation"
               :key="item.to"
@@ -139,7 +149,7 @@ watch(route, () => { mobileMenuOpen.value = false })
               {{ item.label }}
             </NuxtLink>
           </nav>
-          <div v-if="user" class="mt-3 mx-4 pt-3 border-t border-black/[0.08] flex items-center gap-3">
+          <div v-if="user" class="shrink-0 mt-3 mx-4 pt-3 border-t border-black/[0.08] flex items-center gap-3">
             <div class="w-9 h-9 rounded-full bg-primary-500 text-white flex items-center justify-center text-[13px] font-semibold shrink-0">
               {{ initials }}
             </div>
