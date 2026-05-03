@@ -5,6 +5,7 @@ const { user } = useAuthUser()
 const loading = ref(true)
 const stats = ref<any>(null)
 const showCheckin = ref(false)
+const { loadError, messageFor } = useFetchError()
 
 const greeting = computed(() => {
   const name = user.value?.firstName || user.value?.email?.split('@')[0] || ''
@@ -27,15 +28,21 @@ const dayLabels = (() => {
   return labels
 })()
 
-onMounted(async () => {
+async function loadStats() {
+  loading.value = true
+  loadError.value = ''
   try {
     stats.value = await $fetch('/api/dashboard/stats')
   }
   catch (e) {
-    console.error('Failed to load dashboard stats:', e)
+    loadError.value = messageFor(e, 'Kon dashboardgegevens niet laden')
   }
-  loading.value = false
-})
+  finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadStats)
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n)
@@ -88,6 +95,13 @@ const todayIndex = 7 // today is always index 7 in the 14-day window
           + Passant inchecken
         </UButton>
       </div>
+    </div>
+
+    <!-- Load error -->
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="loadStats()">Opnieuw laden</button>
     </div>
 
     <!-- Loading -->

@@ -10,6 +10,7 @@ const marinaId = ref('')
 const showNew = ref(false)
 const saving = ref(false)
 const statusFilter = ref<string>('')
+const { errorMessage, loadError, messageFor } = useFetchError()
 
 const newOrder = ref({
   customerId: '',
@@ -37,32 +38,54 @@ const priorityColors: Record<string, string> = {
 
 async function fetchOrders() {
   loading.value = true
+  loadError.value = ''
   const q: Record<string, string> = {}
   if (statusFilter.value) q.status = statusFilter.value
-  orders.value = await $fetch('/api/workorders', { query: q }) as any[]
-  loading.value = false
+  try {
+    orders.value = await $fetch('/api/workorders', { query: q }) as any[]
+  }
+  catch (e) {
+    loadError.value = messageFor(e, 'Kon werkbonnen niet laden')
+  }
+  finally {
+    loading.value = false
+  }
 }
 
-onMounted(async () => {
-  const d = await $fetch('/api/berths/discover') as any
-  marinaId.value = d.marinaId
-  await Promise.all([
-    fetchOrders(),
-    $fetch('/api/customers', { query: { marinaId: d.marinaId } }).then((c: any) => customers.value = c),
-    $fetch('/api/marina/users').then((u: any) => users.value = u),
-    $fetch('/api/berths', { query: { marinaId: d.marinaId } }).then((b: any) => berths.value = b)
-  ])
-})
+async function load() {
+  loadError.value = ''
+  try {
+    const d = await $fetch('/api/berths/discover') as any
+    marinaId.value = d.marinaId
+    const results = await Promise.allSettled([
+      fetchOrders(),
+      $fetch('/api/customers', { query: { marinaId: d.marinaId } }).then((c: any) => customers.value = c),
+      $fetch('/api/marina/users').then((u: any) => users.value = u),
+      $fetch('/api/berths', { query: { marinaId: d.marinaId } }).then((b: any) => berths.value = b)
+    ])
+    const failed = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
+    if (failed && !loadError.value) loadError.value = messageFor(failed.reason, 'Een deel van de gegevens kon niet geladen worden')
+  }
+  catch (e) {
+    loadError.value = messageFor(e, 'Kon werkbonnen niet laden')
+  }
+}
+
+onMounted(load)
 watch(statusFilter, fetchOrders)
 
 async function create() {
   if (!newOrder.value.title) return
   saving.value = true
+  errorMessage.value = ''
   try {
     await $fetch('/api/workorders', { method: 'POST', body: newOrder.value })
     newOrder.value = { customerId: '', boatId: '', berthId: '', title: '', description: '', priority: 'normal', assigneeId: '', scheduledAt: '' }
     showNew.value = false
     await fetchOrders()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Werkbon aanmaken mislukt')
   }
   finally {
     saving.value = false
@@ -70,14 +93,26 @@ async function create() {
 }
 
 async function updateStatus(id: string, status: string) {
-  await $fetch(`/api/workorders/${id}`, { method: 'PUT', body: { status } })
-  await fetchOrders()
+  errorMessage.value = ''
+  try {
+    await $fetch(`/api/workorders/${id}`, { method: 'PUT', body: { status } })
+    await fetchOrders()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Status bijwerken mislukt')
+  }
 }
 
 async function remove(id: string) {
   if (!confirm('Verwijderen?')) return
-  await $fetch(`/api/workorders/${id}`, { method: 'DELETE' })
-  await fetchOrders()
+  errorMessage.value = ''
+  try {
+    await $fetch(`/api/workorders/${id}`, { method: 'DELETE' })
+    await fetchOrders()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Verwijderen mislukt')
+  }
 }
 
 function formatDate(d: string) {
@@ -93,6 +128,18 @@ function formatDate(d: string) {
         <div class="text-xs text-[#5A6A78] mt-0.5">{{ orders.length }} werkbonnen</div>
       </div>
       <UButton color="primary" class="rounded-full" size="sm" @click="showNew = !showNew">+ Nieuwe werkbon</UButton>
+    </div>
+
+    <!-- Errors -->
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="load()">Opnieuw laden</button>
+    </div>
+    <div v-if="errorMessage" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ errorMessage }}</div>
+      <button class="text-xs text-red-700 underline" @click="errorMessage = ''">Sluiten</button>
     </div>
 
     <!-- Filter -->

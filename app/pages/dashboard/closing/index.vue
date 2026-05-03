@@ -4,11 +4,20 @@ definePageMeta({ layout: 'dashboard' })
 const date = ref(new Date().toISOString().slice(0, 10))
 const loading = ref(true)
 const report = ref<any>(null)
+const { loadError, messageFor } = useFetchError()
 
 async function fetchReport() {
   loading.value = true
-  report.value = await $fetch('/api/reports/closing', { query: { date: date.value } })
-  loading.value = false
+  loadError.value = ''
+  try {
+    report.value = await $fetch('/api/reports/closing', { query: { date: date.value } })
+  }
+  catch (e) {
+    loadError.value = messageFor(e, 'Kon dagafsluiting niet laden')
+  }
+  finally {
+    loading.value = false
+  }
 }
 
 onMounted(fetchReport)
@@ -45,6 +54,12 @@ function print() {
     </div>
 
     <h2 class="hidden print:block text-lg font-semibold mb-3">Dagafsluiting — {{ new Date(date).toLocaleDateString('nl-NL') }}</h2>
+
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3 print:hidden">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="fetchReport()">Opnieuw laden</button>
+    </div>
 
     <div v-if="loading" class="text-sm text-[#5A6A78]">Laden...</div>
     <template v-else-if="report">

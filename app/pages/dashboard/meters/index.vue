@@ -8,6 +8,7 @@ const showNew = ref(false)
 const saving = ref(false)
 const typeFilter = ref<string>('')
 const marinaId = ref('')
+const { errorMessage, loadError, messageFor } = useFetchError()
 
 const newReading = ref({
   berthId: '',
@@ -34,27 +35,50 @@ const typeIcons: Record<string, string> = {
 
 async function fetchReadings() {
   loading.value = true
+  loadError.value = ''
   const q: Record<string, string> = {}
   if (typeFilter.value) q.type = typeFilter.value
-  readings.value = await $fetch('/api/meters', { query: q }) as any[]
-  loading.value = false
+  try {
+    readings.value = await $fetch('/api/meters', { query: q }) as any[]
+  }
+  catch (e) {
+    loadError.value = messageFor(e, 'Kon meterstanden niet laden')
+  }
+  finally {
+    loading.value = false
+  }
 }
 
-onMounted(async () => {
-  const d = await $fetch('/api/berths/discover') as any
-  marinaId.value = d.marinaId
-  berths.value = await $fetch('/api/berths', { query: { marinaId: d.marinaId } }) as any[]
+async function load() {
+  loading.value = true
+  loadError.value = ''
+  try {
+    const d = await $fetch('/api/berths/discover') as any
+    marinaId.value = d.marinaId
+    berths.value = await $fetch('/api/berths', { query: { marinaId: d.marinaId } }) as any[]
+  }
+  catch (e) {
+    loadError.value = messageFor(e, 'Kon ligplaatsen niet laden')
+    loading.value = false
+    return
+  }
   await fetchReadings()
-})
+}
+
+onMounted(load)
 watch(typeFilter, fetchReadings)
 
 async function create() {
   saving.value = true
+  errorMessage.value = ''
   try {
     await $fetch('/api/meters', { method: 'POST', body: newReading.value })
     newReading.value = { berthId: '', type: 'ELECTRICITY', value: 0, note: '' }
     showNew.value = false
     await fetchReadings()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Opslaan mislukt')
   }
   finally {
     saving.value = false
@@ -63,8 +87,14 @@ async function create() {
 
 async function remove(id: string) {
   if (!confirm('Verwijderen?')) return
-  await $fetch(`/api/meters/${id}`, { method: 'DELETE' })
-  await fetchReadings()
+  errorMessage.value = ''
+  try {
+    await $fetch(`/api/meters/${id}`, { method: 'DELETE' })
+    await fetchReadings()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Verwijderen mislukt')
+  }
 }
 
 function formatDate(d: string) {
@@ -80,6 +110,18 @@ function formatDate(d: string) {
         <div class="text-xs text-[#5A6A78] mt-0.5">{{ readings.length }} meterstanden</div>
       </div>
       <UButton color="primary" class="rounded-full" size="sm" @click="showNew = !showNew">+ Stand opnemen</UButton>
+    </div>
+
+    <!-- Errors -->
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="load()">Opnieuw laden</button>
+    </div>
+    <div v-if="errorMessage" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ errorMessage }}</div>
+      <button class="text-xs text-red-700 underline" @click="errorMessage = ''">Sluiten</button>
     </div>
 
     <!-- Type filter -->

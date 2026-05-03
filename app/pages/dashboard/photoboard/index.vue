@@ -8,13 +8,25 @@ const search = ref('')
 const editingBoat = ref<any>(null)
 const editPhoto = ref('')
 const saving = ref(false)
+const { errorMessage, loadError, messageFor } = useFetchError()
 
-onMounted(async () => {
-  const d = await $fetch('/api/berths/discover') as any
-  marinaId.value = d.marinaId
-  boats.value = await $fetch('/api/boats', { query: { marinaId: d.marinaId } }) as any[]
-  loading.value = false
-})
+async function load() {
+  loading.value = true
+  loadError.value = ''
+  try {
+    const d = await $fetch('/api/berths/discover') as any
+    marinaId.value = d.marinaId
+    boats.value = await $fetch('/api/boats', { query: { marinaId: d.marinaId } }) as any[]
+  }
+  catch (e) {
+    loadError.value = messageFor(e, 'Kon boten niet laden')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+onMounted(load)
 
 const filtered = computed(() => {
   const q = search.value.toLowerCase().trim()
@@ -34,6 +46,7 @@ function startEdit(boat: any) {
 async function savePhoto() {
   if (!editingBoat.value) return
   saving.value = true
+  errorMessage.value = ''
   try {
     const updated = await $fetch(`/api/boats/${editingBoat.value.id}`, {
       method: 'PUT',
@@ -42,6 +55,9 @@ async function savePhoto() {
     const idx = boats.value.findIndex(b => b.id === editingBoat.value.id)
     if (idx >= 0) boats.value[idx] = { ...boats.value[idx], photo: updated.photo }
     editingBoat.value = null
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Opslaan mislukt')
   }
   finally {
     saving.value = false
@@ -63,6 +79,17 @@ async function savePhoto() {
       placeholder="Zoek op bootnaam, klant of ligplaats..."
       class="w-full mb-4 px-4 py-2.5 text-sm rounded-full border border-black/[0.08] bg-white"
     >
+
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="load()">Opnieuw laden</button>
+    </div>
+    <div v-if="errorMessage" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ errorMessage }}</div>
+      <button class="text-xs text-red-700 underline" @click="errorMessage = ''">Sluiten</button>
+    </div>
 
     <div v-if="loading" class="text-sm text-[#5A6A78]">Laden...</div>
     <div v-else-if="!filtered.length" class="bg-white border border-black/[0.08] rounded-[14px] p-8 text-center text-sm text-[#5A6A78]">
