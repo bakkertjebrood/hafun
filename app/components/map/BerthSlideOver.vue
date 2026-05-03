@@ -11,7 +11,7 @@ const props = defineProps<{
     status: string
     type?: BerthType
     customer?: { id: string; name: string; contractType?: string } | null
-    boat?: { id: string; name: string; type?: string; length: number; width?: number } | null
+    boat?: { id: string; name: string; type?: string; length: number; width?: number; photo?: string | null } | null
     notes?: Array<{ id: string; text: string; createdAt: string; author: { firstName: string; lastName: string } }>
     bookings?: Array<{ id: string; dateFrom: string; dateTo: string; status: string; customer?: { id?: string; name: string } | null; guest?: { name: string } | null }>
   }
@@ -27,6 +27,7 @@ const emit = defineEmits<{
   deleteRequested: []
   checkinRequested: []
   linkCustomer: []
+  editBoatPhoto: []
   flipSide: []
 }>()
 
@@ -220,9 +221,13 @@ function formatDateTime(d: string) {
             v-if="berth.customer"
             class="flex items-center gap-3"
           >
-            <div class="w-12 h-12 rounded-[14px] bg-primary-500/10 text-primary-500 flex items-center justify-center shrink-0">
-              <UIcon name="i-lucide-sailboat" class="size-6" />
-            </div>
+            <BoatBoatAvatar
+              :public-id="berth.boat?.photo"
+              :size="56"
+              rounded="lg"
+              :editable="!!berth.boat"
+              @edit="emit('editBoatPhoto')"
+            />
             <div class="flex-1 min-w-0">
               <div class="text-sm font-semibold text-[#0A1520] truncate">{{ berth.customer.name }}</div>
               <div class="text-xs text-[#5A6A78] truncate">
