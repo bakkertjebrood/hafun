@@ -44,6 +44,15 @@ onMounted(async () => {
   marinaId.value = discovered.marinaId
   await Promise.all([fetchToday(), fetchAll(), fetchBerths()])
   loading.value = false
+
+  // Pre-select berth + open "new booking" tab when navigated from the map
+  // (e.g. "Tijdelijk verhuren" button on a vaste plek)
+  const route = useRoute()
+  const preBerthId = route.query.berthId
+  if (typeof preBerthId === 'string' && preBerthId) {
+    newBooking.value.berthId = preBerthId
+    activeTab.value = 'new'
+  }
 })
 
 async function fetchToday() {
@@ -55,7 +64,10 @@ async function fetchAll() {
 }
 
 async function fetchBerths() {
-  const data = await $fetch('/api/berths', { query: { marinaId: marinaId.value, status: 'FREE' } }) as any[]
+  // Haal alle ligplaatsen op (niet alleen FREE) zodat we ook vaste plekken
+  // tijdelijk kunnen verhuren als de vaste ligger weg is. Server controleert
+  // of de gekozen periode niet overlapt met andere boekingen.
+  const data = await $fetch('/api/berths', { query: { marinaId: marinaId.value } }) as any[]
   berths.value = data
 }
 
@@ -284,8 +296,10 @@ function nights(from: string, to: string) {
           <div>
             <label class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1 block">Ligplaats *</label>
             <select v-model="newBooking.berthId" class="w-full px-3 py-2.5 text-sm rounded-[10px] border border-black/[0.08] bg-[#F4F7F8] focus:outline-none focus:border-primary-500">
-              <option value="">Selecteer een vrije plek...</option>
-              <option v-for="b in berths" :key="b.id" :value="b.id">{{ b.code }} ({{ b.length }}m × {{ b.width }}m)</option>
+              <option value="">Selecteer een plek...</option>
+              <option v-for="b in berths" :key="b.id" :value="b.id">
+                {{ b.code }} ({{ b.length }}m × {{ b.width }}m){{ b.customer ? ` — vast: ${b.customer.name}` : '' }}
+              </option>
             </select>
           </div>
 

@@ -30,12 +30,12 @@ let drawHeadPolyline: any = null
 let drawPreviewLine: any = null
 
 const statusColors: Record<string, string> = {
-  FREE: '#10B981', OCCUPIED: '#EF4444', PASSANT: '#EC4899', SEASONAL: '#F59E0B',
+  FREE: '#10B981', OCCUPIED: '#EF4444', PASSANT: '#EC4899', SUBLET: '#7C3AED', SEASONAL: '#F59E0B',
   STORAGE: '#8B5CF6', TEMPORARY: '#F97316', EMPTY: '#9CA3AF', RELOCATED: '#6366F1',
   MELDING: '#F43F5E'
 }
 const statusLabels: Record<string, string> = {
-  FREE: 'Vrij', OCCUPIED: 'Klant', PASSANT: 'Passant', SEASONAL: 'Zomer',
+  FREE: 'Vrij', OCCUPIED: 'Klant', PASSANT: 'Passant', SUBLET: 'Tijdelijk verhuurd', SEASONAL: 'Zomer',
   STORAGE: 'Stalling', TEMPORARY: 'Tijdelijk', EMPTY: 'Leeg', RELOCATED: 'Verplaatst',
   MELDING: 'Melding'
 }
@@ -43,6 +43,7 @@ const statusLabels: Record<string, string> = {
 // Datumfilter — bekijk de bezetting op een andere dag
 const viewDate = ref('')
 const showLegend = ref(false)
+const fabOpen = ref(false)
 const pierMenuFor = ref<any | null>(null)
 const pierMenuPos = ref<{ x: number, y: number } | null>(null)
 const pierMenuBerthCount = ref(4)
@@ -79,6 +80,11 @@ const FACILITY_TYPES = Object.keys(FACILITY_CATALOG)
 const facilities = ref<any[]>([])
 const facilityLayers: any[] = []
 const placingFacilityType = ref<string | null>(null)
+
+// Quick berth placement (drag/click a quick-add button onto the map)
+const placingBerth = ref<null | { isPassanten: boolean, length: number }>(null)
+const placingBerthBusy = ref(false)
+const quickBerthLength = ref(10)
 
 // Bearing (0 = north, 90 = east) from A to B
 function bearingOf(a: number[], b: number[]): number {
@@ -156,6 +162,11 @@ function onKeyDown(e: KeyboardEvent) {
   if (placingFacilityType.value && e.key === 'Escape') {
     e.preventDefault()
     cancelPlacingFacility()
+    return
+  }
+  if (placingBerth.value && e.key === 'Escape') {
+    e.preventDefault()
+    cancelPlacingBerth()
     return
   }
   if (drawMode.value === 'off') return
@@ -285,7 +296,7 @@ function renderPierLines() {
 
     // Click on any segment → open the pier action menu
     const onPick = (e: any) => {
-      if (!editMode.value || drawMode.value !== 'off' || placingFacilityType.value) return
+      if (!editMode.value || drawMode.value !== 'off' || placingFacilityType.value || placingBerth.value) return
       const px = mapInstance.latLngToContainerPoint(e.latlng)
       pierMenuBerthCount.value = 4
       pierMenuBerthLength.value = 10
@@ -456,6 +467,10 @@ function quickStartDrawPier() {
 function onMapClick(e: any) {
   // Always dismiss any open pier action menu when tapping somewhere else.
   if (pierMenuFor.value) closePierMenu()
+  if (placingBerth.value) {
+    placeBerthAt(e.latlng.lat, e.latlng.lng)
+    return
+  }
   if (placingFacilityType.value) {
     const type = placingFacilityType.value
     placeFacilityAt(type, e.latlng.lat, e.latlng.lng)
@@ -754,17 +769,28 @@ function addBerthMarkers() {
           ? '#F59E0B'
           : '#94A3B8'
 
+    // Passantenplekken krijgen een roze ring + dashed border zodat ze ook
+    // visueel herkenbaar zijn als de status niet PASSANT is (bijv. FREE).
+    const isPassant = !!berth.isPassanten
+    const borderColor = isEdit ? sideColor : (isPassant ? '#EC4899' : 'white')
+    const borderStyle = isPassant && !isEdit ? 'dashed' : 'solid'
+    const ringShadow = isPassant && !isEdit
+      ? 'box-shadow: 0 1px 4px rgba(0,0,0,0.35), 0 0 0 1.5px rgba(236,72,153,0.35);'
+      : 'box-shadow: 0 1px 4px rgba(0,0,0,0.35);'
+    const titleSuffix = isPassant ? ' (passant)' : ''
+
     const html = `
       <div class="berth-marker-rot" style="transform: rotate(${rot}deg); transform-origin: center; width: ${w}px; height: ${h}px;">
         <div class="berth-marker" style="
           width: 100%; height: 100%; background: ${color};
-          border-radius: 3px; border: 2px solid ${isEdit ? sideColor : 'white'};
-          box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+          border-radius: 3px; border: 2px ${borderStyle} ${borderColor};
+          ${ringShadow}
           cursor: ${isEdit ? 'grab' : 'pointer'};
           transition: transform 0.15s;
           position: relative;
-        " title="${berth.code} — ${statusLabels[status] || status}">
+        " title="${berth.code} — ${statusLabels[status] || status}${titleSuffix}">
           ${isEdit ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:white;font-size:8px;font-weight:700;text-shadow:0 0 2px #000;transform: rotate(${-rot}deg);">${berthShortCode(berth.code)}</div>` : ''}
+          ${isPassant && !isEdit ? `<div style="position:absolute;top:-3px;right:-3px;width:8px;height:8px;background:#EC4899;border:1.5px solid white;border-radius:50%;"></div>` : ''}
         </div>
       </div>
     `
@@ -846,6 +872,7 @@ function toggleEditMode() {
   if (!editMode.value) {
     cancelDraw()
     cancelPlacingFacility()
+    cancelPlacingBerth()
     closePierMenu()
   }
   addBerthMarkers()
@@ -945,18 +972,36 @@ function onDragEndBerth() {
 }
 
 function onMapDragOver(e: DragEvent) {
-  if (!draggingBerthId.value && !e.dataTransfer?.types.includes('text/berth-id')) return
-  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+  const types = e.dataTransfer?.types || []
+  const hasBerthDrag = draggingBerthId.value
+    || types.includes('text/berth-id')
+    || types.includes('text/new-berth')
+  if (!hasBerthDrag) return
+  if (e.dataTransfer) e.dataTransfer.dropEffect = draggingBerthId.value ? 'move' : 'copy'
 }
 
 async function onMapDrop(e: DragEvent) {
-  const id = e.dataTransfer?.getData('text/berth-id') || draggingBerthId.value
-  draggingBerthId.value = null
-  if (!id || !mapInstance || !mapContainer.value) return
-
+  if (!mapInstance || !mapContainer.value) return
   const rect = mapContainer.value.getBoundingClientRect()
   const point = [e.clientX - rect.left, e.clientY - rect.top] as [number, number]
   const latlng = mapInstance.containerPointToLatLng(point)
+
+  // New berth drag-and-drop from quick-add toolbar
+  const newBerthRaw = e.dataTransfer?.getData('text/new-berth')
+  if (newBerthRaw) {
+    try {
+      const spec = JSON.parse(newBerthRaw) as { isPassanten: boolean, length: number }
+      await placeBerthAt(latlng.lat, latlng.lng, spec)
+    } catch (err) {
+      console.error('Drop nieuwe ligplaats mislukt', err)
+    }
+    return
+  }
+
+  // Existing berth dragged from the unpositioned list
+  const id = e.dataTransfer?.getData('text/berth-id') || draggingBerthId.value
+  draggingBerthId.value = null
+  if (!id) return
 
   try {
     await $fetch(`/api/berths/${id}`, {
@@ -967,6 +1012,57 @@ async function onMapDrop(e: DragEvent) {
     addBerthMarkers()
   } catch (err) {
     console.error('Kon ligplaats niet plaatsen', err)
+  }
+}
+
+function startPlacingBerth(isPassanten: boolean) {
+  // Toggle off if same type already active
+  if (placingBerth.value && placingBerth.value.isPassanten === isPassanten) {
+    cancelPlacingBerth()
+    return
+  }
+  // Cancel competing placement modes
+  cancelPlacingFacility()
+  closePierMenu()
+  placingBerth.value = { isPassanten, length: quickBerthLength.value }
+  if (mapInstance) mapInstance.getContainer().style.cursor = 'crosshair'
+}
+
+function cancelPlacingBerth() {
+  placingBerth.value = null
+  if (mapInstance) mapInstance.getContainer().style.cursor = ''
+}
+
+function onDragStartNewBerth(e: DragEvent, isPassanten: boolean) {
+  if (!e.dataTransfer) return
+  e.dataTransfer.effectAllowed = 'copy'
+  e.dataTransfer.setData('text/new-berth', JSON.stringify({
+    isPassanten,
+    length: quickBerthLength.value
+  }))
+}
+
+async function placeBerthAt(lat: number, lng: number, override?: { isPassanten: boolean, length: number }) {
+  const spec = override || placingBerth.value
+  if (!spec || !marinaId.value || placingBerthBusy.value) return
+  placingBerthBusy.value = true
+  try {
+    const created = await $fetch('/api/berths/place', {
+      method: 'POST',
+      body: {
+        marinaId: marinaId.value,
+        gpsLat: lat,
+        gpsLng: lng,
+        length: spec.length,
+        isPassanten: spec.isPassanten
+      }
+    }) as any
+    if (mapData.value?.berths) mapData.value.berths.push({ ...created, displayStatus: created.status })
+    addBerthMarkers()
+  } catch (e: any) {
+    alert(e?.data?.message || 'Plaatsen mislukt')
+  } finally {
+    placingBerthBusy.value = false
   }
 }
 
@@ -1306,6 +1402,7 @@ async function placeFacilityAt(type: string, lat: number, lng: number) {
 }
 
 function startPlacingFacility(type: string) {
+  cancelPlacingBerth()
   placingFacilityType.value = placingFacilityType.value === type ? null : type
   if (mapInstance) {
     mapInstance.getContainer().style.cursor = placingFacilityType.value ? 'crosshair' : ''
@@ -1378,7 +1475,7 @@ async function deleteFacility(f: any) {
 
         <!-- Actions (desktop only — mobile uses FAB) -->
         <button
-          class="px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold transition-all shrink-0"
+          class="hidden lg:inline-flex px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold transition-all shrink-0"
           :class="editMode ? 'bg-primary-500 text-white' : 'bg-[#F4F7F8] text-[#5A6A78]'"
           @click="toggleEditMode"
         >
@@ -1404,7 +1501,7 @@ async function deleteFacility(f: any) {
         </div>
 
         <button
-          class="px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0"
+          class="hidden lg:inline-flex px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0"
           :class="showLegend ? '!bg-primary-500/10 !text-primary-600' : ''"
           title="Legenda"
           @click="showLegend = !showLegend"
@@ -1481,6 +1578,14 @@ async function deleteFacility(f: any) {
             <span class="text-[#0A1520]">{{ label }}</span>
           </div>
           <span class="font-mono font-semibold text-[#5A6A78]">{{ counts[key] ?? 0 }}</span>
+        </div>
+      </div>
+      <div class="border-t border-black/[0.06] mt-2 pt-2">
+        <div class="flex items-center gap-1.5 text-[11px] text-[#5A6A78]">
+          <span class="w-3 h-3 rounded-sm border-[1.5px] border-dashed border-pink-500 shrink-0 relative">
+            <span class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-pink-500 rounded-full border border-white" />
+          </span>
+          Passantenplek
         </div>
       </div>
     </div>
@@ -1962,18 +2067,80 @@ async function deleteFacility(f: any) {
           <UIcon name="i-lucide-list" class="size-5 text-[#0A1520]" />
         </button>
 
-        <!-- Edit mode floating "+ Steiger" button -->
-        <button
+        <!-- Edit mode quick-add toolbar — drag of klik om te plaatsen -->
+        <div
           v-if="editMode && drawMode === 'off' && !pierMenuFor && !placingFacilityType"
-          class="absolute z-[1050] bottom-4 left-4 lg:left-6 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-primary-500 text-white text-sm font-semibold shadow-xl hover:bg-primary-600"
-          @click="quickStartDrawPier"
+          class="absolute z-[1050] bottom-4 left-4 lg:left-6 right-4 lg:right-auto lg:max-w-md flex flex-wrap items-center gap-2"
         >
-          <UIcon
-            name="i-lucide-plus"
-            class="size-4"
+          <button
+            class="inline-flex items-center gap-2 px-4 py-3 rounded-full bg-primary-500 text-white text-sm font-semibold shadow-xl hover:bg-primary-600 shrink-0"
+            @click="quickStartDrawPier"
+          >
+            <UIcon
+              name="i-lucide-plus"
+              class="size-4"
+            />
+            Steiger
+          </button>
+
+          <div class="flex items-center gap-1.5 bg-white rounded-full shadow-xl border border-black/[0.08] p-1.5">
+            <button
+              :draggable="!!drawnPiers.length"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[12px] font-semibold transition-colors disabled:opacity-50"
+              :class="placingBerth && !placingBerth.isPassanten ? 'bg-emerald-500 text-white' : 'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20'"
+              :disabled="!drawnPiers.length"
+              :title="drawnPiers.length ? 'Klik dan op de kaart, of sleep naar de gewenste plek' : 'Teken eerst een steiger'"
+              @click="startPlacingBerth(false)"
+              @dragstart="onDragStartNewBerth($event, false)"
+              @dragend="cancelPlacingBerth"
+            >
+              <span class="w-2 h-2 rounded-sm bg-emerald-500" />
+              Vaste plek
+            </button>
+            <button
+              :draggable="!!drawnPiers.length"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[12px] font-semibold transition-colors disabled:opacity-50"
+              :class="placingBerth && placingBerth.isPassanten ? 'bg-pink-500 text-white' : 'bg-pink-500/10 text-pink-700 hover:bg-pink-500/20'"
+              :disabled="!drawnPiers.length"
+              :title="drawnPiers.length ? 'Klik dan op de kaart, of sleep naar de gewenste plek' : 'Teken eerst een steiger'"
+              @click="startPlacingBerth(true)"
+              @dragstart="onDragStartNewBerth($event, true)"
+              @dragend="cancelPlacingBerth"
+            >
+              <span class="w-2 h-2 rounded-sm bg-pink-500" />
+              Passant
+            </button>
+            <label class="flex items-center gap-1 text-[11px] text-[#5A6A78] pl-1.5 pr-1 border-l border-black/[0.08]">
+              <input
+                v-model.number="quickBerthLength"
+                type="number"
+                min="4"
+                max="30"
+                class="w-10 px-1.5 py-1 rounded-md border border-black/[0.12] bg-white text-[12px] font-semibold text-[#0A1520] text-right"
+              ><span>m</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Place-berth banner -->
+        <div
+          v-if="placingBerth"
+          class="absolute z-[1100] top-3 left-1/2 -translate-x-1/2 bg-white rounded-full shadow-xl border border-black/[0.08] px-3 py-1.5 text-[12px] text-[#0A1520] inline-flex items-center gap-2 max-w-[90vw]"
+        >
+          <span
+            class="w-2 h-2 rounded-sm shrink-0"
+            :style="{ background: placingBerth.isPassanten ? '#EC4899' : '#10B981' }"
           />
-          Nieuwe steiger
-        </button>
+          <span class="truncate">
+            Klik op de kaart om <strong>{{ placingBerth.isPassanten ? 'passantenplek' : 'vaste plek' }}</strong> te plaatsen
+          </span>
+          <button
+            class="text-[#5A6A78] hover:text-[#0A1520] shrink-0 -mr-1"
+            @click="cancelPlacingBerth"
+          >
+            <UIcon name="i-lucide-x" class="size-3.5" />
+          </button>
+        </div>
 
         <!-- Pier action menu (tap a pier in edit mode) -->
         <div
@@ -2146,6 +2313,42 @@ async function deleteFacility(f: any) {
         @delete-requested="deleteBerthWithConfirm(selectedBerth)"
       />
     </div>
+
+    <!-- Mobile floating action button (Bewerken + Legenda) -->
+    <div class="lg:hidden fixed bottom-20 right-4 z-[1200] flex flex-col items-end gap-2">
+      <Transition name="fab-list">
+        <div
+          v-if="fabOpen"
+          class="flex flex-col items-stretch gap-2"
+        >
+          <button
+            class="px-4 py-2.5 rounded-full text-sm font-semibold inline-flex items-center gap-2 shadow-lg backdrop-blur-sm"
+            :class="editMode ? 'bg-primary-500 text-white' : 'bg-white text-[#0A1520]'"
+            @click="fabOpen = false; toggleEditMode()"
+          >
+            <UIcon name="i-lucide-pencil-line" class="size-4" />
+            {{ editMode ? 'Klaar' : 'Bewerken' }}
+          </button>
+          <button
+            class="px-4 py-2.5 rounded-full text-sm font-semibold inline-flex items-center gap-2 shadow-lg backdrop-blur-sm"
+            :class="showLegend ? 'bg-primary-500/10 text-primary-600' : 'bg-white text-[#0A1520]'"
+            @click="fabOpen = false; showLegend = !showLegend"
+          >
+            <UIcon name="i-lucide-list" class="size-4" />
+            Legenda
+          </button>
+        </div>
+      </Transition>
+
+      <button
+        class="w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-white transition-transform"
+        :class="fabOpen ? 'bg-[#0A1520] rotate-45' : 'bg-primary-500'"
+        :aria-label="fabOpen ? 'Sluit menu' : 'Open kaartacties'"
+        @click="fabOpen = !fabOpen"
+      >
+        <UIcon name="i-lucide-plus" class="size-6" />
+      </button>
+    </div>
   </div>
 </template>
 
@@ -2176,5 +2379,16 @@ async function deleteFacility(f: any) {
   .leaflet-top.leaflet-left {
     top: 60px;
   }
+}
+
+.fab-list-enter-active,
+.fab-list-leave-active {
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fab-list-enter-from,
+.fab-list-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 </style>

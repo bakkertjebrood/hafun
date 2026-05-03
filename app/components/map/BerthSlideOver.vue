@@ -11,7 +11,7 @@ const props = defineProps<{
     customer?: { id: string; name: string; contractType?: string } | null
     boat?: { id: string; name: string; type?: string; length: number; width?: number } | null
     notes?: Array<{ id: string; text: string; createdAt: string; author: { firstName: string; lastName: string } }>
-    bookings?: Array<{ id: string; dateFrom: string; dateTo: string; status: string; customer?: { name: string } | null; guest?: { name: string } | null }>
+    bookings?: Array<{ id: string; dateFrom: string; dateTo: string; status: string; customer?: { id?: string; name: string } | null; guest?: { name: string } | null }>
   }
   open: boolean
   editMode?: boolean
@@ -30,6 +30,19 @@ const emit = defineEmits<{
 // Active booking for this berth
 const activeBooking = computed(() => {
   return props.berth.bookings?.find(b => b.status === 'reserved' || b.status === 'checked_in')
+})
+
+// Een vaste plek met een actieve booking voor iemand anders dan de vaste klant
+// = sublet (vaste ligger weg, plek tijdelijk aan een andere boot verhuurd)
+const isSublet = computed(() => {
+  const ab = activeBooking.value
+  if (!ab || !props.berth.customer || props.berth.isPassanten) return false
+  // Match op customer-id wanneer beschikbaar, val terug op naam (gast-bookings)
+  if (ab.customer?.id && props.berth.customer.id) {
+    return ab.customer.id !== props.berth.customer.id
+  }
+  const bookingName = ab.customer?.name || ab.guest?.name
+  return bookingName !== props.berth.customer.name
 })
 
 const checkingIn = ref(false)
@@ -159,10 +172,30 @@ function formatDateTime(d: string) {
 
       <!-- Content (scrollable) -->
       <div class="flex-1 overflow-y-auto">
+        <!-- Sublet banner: vaste plek tijdelijk verhuurd aan iemand anders -->
+        <div
+          v-if="isSublet && activeBooking"
+          class="px-5 py-3 border-b border-purple-500/20 bg-purple-500/5"
+        >
+          <div class="text-[10px] uppercase tracking-widest text-purple-700 font-semibold mb-1 inline-flex items-center gap-1">
+            <UIcon name="i-lucide-calendar-clock" class="size-3" />
+            Tijdelijk verhuurd aan
+          </div>
+          <div class="text-sm font-semibold text-[#0A1520]">{{ activeBooking.customer?.name || activeBooking.guest?.name }}</div>
+          <div class="text-xs text-[#5A6A78] mt-0.5">
+            {{ formatDate(activeBooking.dateFrom) }} – {{ formatDate(activeBooking.dateTo) }}
+          </div>
+          <div class="text-[10px] text-[#5A6A78] mt-1">
+            Plek blijft gekoppeld aan {{ berth.customer?.name }}
+          </div>
+        </div>
+
         <!-- Customer & Boat -->
         <div class="px-5 py-4 border-b border-black/[0.08]">
           <div v-if="berth.customer" class="mb-3">
-            <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1">Huurder</div>
+            <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1">
+              {{ isSublet ? 'Vaste ligger' : 'Huurder' }}
+            </div>
             <div class="text-sm font-semibold text-[#0A1520]">{{ berth.customer.name }}</div>
             <div v-if="berth.customer.contractType" class="text-xs text-[#5A6A78] mt-0.5">
               {{ berth.customer.contractType === 'YEAR' ? 'Jaarcontract' : berth.customer.contractType === 'SUMMER' ? 'Seizoencontract' : 'Tijdelijk' }}
@@ -287,9 +320,13 @@ function formatDateTime(d: string) {
           </button>
         </div>
         <div class="flex gap-2">
-          <UButton color="primary" class="rounded-full flex-1" size="sm" @click="emit('checkinRequested')">
-            + Boeking
-          </UButton>
+          <NuxtLink
+            :to="`/dashboard/bookings?berthId=${berth.id}`"
+            class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-full bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600"
+          >
+            <UIcon name="i-lucide-calendar-plus" class="size-3.5" />
+            {{ berth.customer && !berth.isPassanten ? 'Tijdelijk verhuren' : '+ Boeking' }}
+          </NuxtLink>
           <UButton color="neutral" variant="outline" class="rounded-full flex-1" size="sm" @click="emit('linkCustomer')">
             Klant koppelen
           </UButton>

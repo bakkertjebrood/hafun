@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
         orderBy: { dateFrom: 'desc' },
         take: 5,
         include: {
-          customer: { select: { name: true } },
+          customer: { select: { id: true, name: true } },
           guest: { select: { name: true } }
         }
       }
