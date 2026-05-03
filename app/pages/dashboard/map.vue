@@ -2336,7 +2336,10 @@ async function deleteFacility(f: any) {
     </div>
 
     <!-- Mobile floating action button (Bewerken + Legenda) -->
-    <div class="lg:hidden fixed bottom-20 right-4 z-[1200] flex flex-col items-end gap-2">
+    <div
+      v-if="!slideOverOpen"
+      class="lg:hidden fixed bottom-20 right-4 z-[1200] flex flex-col items-end gap-2"
+    >
       <Transition name="fab-list">
         <div
           v-if="fabOpen"

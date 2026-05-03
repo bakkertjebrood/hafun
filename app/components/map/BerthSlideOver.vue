@@ -246,6 +246,29 @@ function formatDateTime(d: string) {
           </div>
         </div>
 
+        <!-- Type wijzigen: vaste plek ↔ passantenplek -->
+        <div class="px-5 py-4 border-b border-black/[0.08]">
+          <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-2">Type ligplaats</div>
+          <div class="grid grid-cols-2 gap-1.5 p-0.5 rounded-full bg-[#F4F7F8] border border-black/[0.08]">
+            <button
+              class="py-1.5 rounded-full text-[12px] font-semibold transition-colors inline-flex items-center justify-center gap-1.5"
+              :class="!berth.isPassanten ? 'bg-emerald-500 text-white' : 'text-[#5A6A78] hover:bg-black/5'"
+              @click="if (berth.isPassanten) togglePassanten()"
+            >
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500" :class="!berth.isPassanten ? '!bg-white' : ''" />
+              Vaste plek
+            </button>
+            <button
+              class="py-1.5 rounded-full text-[12px] font-semibold transition-colors inline-flex items-center justify-center gap-1.5"
+              :class="berth.isPassanten ? 'bg-pink-500 text-white' : 'text-[#5A6A78] hover:bg-black/5'"
+              @click="if (!berth.isPassanten) togglePassanten()"
+            >
+              <span class="w-1.5 h-1.5 rounded-full bg-pink-500" :class="berth.isPassanten ? '!bg-white' : ''" />
+              Passant
+            </button>
+          </div>
+        </div>
+
         <!-- Notes -->
         <div class="px-5 py-4">
           <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-3">
@@ -294,16 +317,7 @@ function formatDateTime(d: string) {
         <div v-if="editMode" class="flex flex-col gap-2">
           <div class="flex gap-2">
             <button
-              class="flex-1 py-2 rounded-full text-xs font-semibold transition-all"
-              :class="berth.isPassanten
-                ? 'bg-primary-500/10 text-primary-500 hover:bg-primary-500/20'
-                : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/5'"
-              @click="togglePassanten"
-            >
-              {{ berth.isPassanten ? '✓ Passantenplaats' : 'Markeer als passanten' }}
-            </button>
-            <button
-              class="px-3 py-2 rounded-full bg-[#F4F7F8] text-[#5A6A78] text-xs font-semibold hover:bg-black/5 inline-flex items-center gap-1"
+              class="flex-1 py-2 rounded-full bg-[#F4F7F8] text-[#5A6A78] text-xs font-semibold hover:bg-black/5 inline-flex items-center justify-center gap-1"
               title="Wissel naar de andere zijde van de steiger"
               @click="emit('flipSide')"
             >
