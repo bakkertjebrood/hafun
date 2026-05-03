@@ -10,6 +10,7 @@ const navigation = [
   { label: 'Reserveringen', icon: 'i-lucide-calendar-check', to: '/dashboard/bookings' },
   { label: 'Huurders', icon: 'i-lucide-users', to: '/dashboard/customers' },
   { label: 'Wachtlijst', icon: 'i-lucide-list-checks', to: '/dashboard/waitlist' },
+  { label: 'Afwezigheid', icon: 'i-lucide-calendar-off', to: '/dashboard/absences' },
   { label: 'Offertes', icon: 'i-lucide-file-text', to: '/dashboard/quotes' },
   { label: 'Werkbonnen', icon: 'i-lucide-wrench', to: '/dashboard/workorders' },
   { label: 'Kassa', icon: 'i-lucide-shopping-cart', to: '/dashboard/pos' },

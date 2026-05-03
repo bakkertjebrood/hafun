@@ -29,3 +29,18 @@ export const PLAN_LIMITS: Record<string, { maxBerths: number }> = {
   professional: { maxBerths: 200 },
   enterprise: { maxBerths: Infinity }
 }
+
+/**
+ * Hafun's platform-fee in basis points on every Connect transaction
+ * (passant payments, waitlist application fees). 5% by default — override
+ * via STRIPE_PLATFORM_FEE_BPS env if needed.
+ */
+export function getPlatformFeeBps(): number {
+  const raw = process.env.STRIPE_PLATFORM_FEE_BPS
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN
+  return Number.isFinite(parsed) ? parsed : 500
+}
+
+export function calcApplicationFee(amountCents: number): number {
+  return Math.round((amountCents * getPlatformFeeBps()) / 10_000)
+}

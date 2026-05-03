@@ -46,34 +46,48 @@ export default defineEventHandler(async (event) => {
 
   // Als datum opgegeven → bepaal per berth of er een booking actief is op die dag
   let activeBookingByBerth: Record<string, any> = {}
+  let activeAbsenceByBerth: Record<string, { releaseForRelet: boolean }> = {}
   if (date) {
     const start = new Date(date); start.setHours(0, 0, 0, 0)
     const end = new Date(date); end.setHours(23, 59, 59, 999)
-    const bookings = await prisma.booking.findMany({
-      where: {
-        marinaId,
-        dateFrom: { lte: end },
-        dateTo: { gte: start },
-        status: { in: ['reserved', 'checked_in'] }
-      },
-      select: {
-        berthId: true,
-        status: true,
-        customerId: true,
-        guest: { select: { name: true } },
-        customer: { select: { name: true } }
-      }
-    })
+    const [bookings, absences] = await Promise.all([
+      prisma.booking.findMany({
+        where: {
+          marinaId,
+          dateFrom: { lte: end },
+          dateTo: { gte: start },
+          status: { in: ['reserved', 'checked_in', 'confirmed'] }
+        },
+        select: {
+          berthId: true,
+          status: true,
+          customerId: true,
+          guest: { select: { name: true } },
+          customer: { select: { name: true } }
+        }
+      }),
+      prisma.berthAbsence.findMany({
+        where: {
+          marinaId,
+          status: { not: 'cancelled' },
+          dateFrom: { lte: end },
+          dateTo: { gte: start }
+        },
+        select: { berthId: true, releaseForRelet: true }
+      })
+    ])
     for (const b of bookings) activeBookingByBerth[b.berthId] = b
+    for (const a of absences) activeAbsenceByBerth[a.berthId] = { releaseForRelet: a.releaseForRelet }
   }
 
   const enriched = berths.map(b => {
     const booking = activeBookingByBerth[b.id]
+    const absence = activeAbsenceByBerth[b.id]
     const hasNote = (noteCounts[b.id] || 0) > 0
     // Afleiden van een "visueel" status voor de kaart. De display-status mengt
     // de echte status (FREE/OCCUPIED/EMPTY/RELOCATED) met het type (voor lege
     // plekken laten we het type-kleur zien) en met afgeleide states als
-    // PASSANT/SUBLET/MELDING.
+    // PASSANT/SUBLET/MELDING/ABSENT.
     let displayStatus: string = b.status
     if (b.status === 'FREE') {
       // Lege plek: kleur op type
@@ -85,6 +99,9 @@ export default defineEventHandler(async (event) => {
         && b.customer?.id != null
         && booking.customerId !== b.customer.id
       displayStatus = sublet ? 'SUBLET' : (b.type === 'PASSANT' ? 'PASSANT' : 'OCCUPIED')
+    } else if (date && absence && b.type === 'JAARPLAATS') {
+      // Eigenaar weg, nog niet geboekt door iemand anders
+      displayStatus = 'ABSENT'
     }
     if (hasNote && !date) displayStatus = 'MELDING'
     return {
@@ -94,7 +111,8 @@ export default defineEventHandler(async (event) => {
       activeBooking: booking ? {
         status: booking.status,
         name: booking.customer?.name || booking.guest?.name
-      } : null
+      } : null,
+      activeAbsence: absence ? { releaseForRelet: absence.releaseForRelet } : null
     }
   })
 
@@ -108,7 +126,8 @@ export default defineEventHandler(async (event) => {
     SUBLET: 0,
     EMPTY: 0,
     RELOCATED: 0,
-    MELDING: 0
+    MELDING: 0,
+    ABSENT: 0
   }
 
   for (const b of enriched) {

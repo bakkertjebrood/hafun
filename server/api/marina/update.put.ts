@@ -16,7 +16,16 @@ export default defineEventHandler(async (event) => {
       ...(body.name && { name: body.name }),
       ...(body.settings && { settings: body.settings }),
       ...(body.gpsLat !== undefined && { gpsLat: body.gpsLat }),
-      ...(body.gpsLng !== undefined && { gpsLng: body.gpsLng })
+      ...(body.gpsLng !== undefined && { gpsLng: body.gpsLng }),
+      ...(body.logoUrl !== undefined && { logoUrl: body.logoUrl }),
+      ...(body.accentColor !== undefined && { accentColor: body.accentColor }),
+      ...(body.publicBio !== undefined && { publicBio: body.publicBio }),
+      ...(body.allowedEmbedOrigins !== undefined && {
+        allowedEmbedOrigins: Array.isArray(body.allowedEmbedOrigins)
+          ? body.allowedEmbedOrigins.filter((o: unknown) => typeof o === 'string')
+          : []
+      }),
+      ...(body.webhookUrl !== undefined && { webhookUrl: body.webhookUrl })
     }
   })
 

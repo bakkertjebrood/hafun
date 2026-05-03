@@ -14,7 +14,14 @@ export default defineEventHandler(async (event) => {
       gpsLat: true,
       gpsLng: true,
       setupComplete: true,
-      settings: true
+      settings: true,
+      logoUrl: true,
+      accentColor: true,
+      publicBio: true,
+      allowedEmbedOrigins: true,
+      webhookUrl: true,
+      stripeConnectAccountId: true,
+      stripeConnectChargesEnabled: true
     }
   })
 

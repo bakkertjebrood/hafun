@@ -90,6 +90,57 @@ export default defineEventHandler(async (event) => {
       }
       break
     }
+
+    case 'account.updated': {
+      const account = stripeEvent.data.object as Stripe.Account
+      await prisma.marina.updateMany({
+        where: { stripeConnectAccountId: account.id },
+        data: { stripeConnectChargesEnabled: !!account.charges_enabled }
+      })
+      break
+    }
+
+    case 'payment_intent.succeeded': {
+      const pi = stripeEvent.data.object as Stripe.PaymentIntent
+      const purpose = pi.metadata?.purpose
+      if (purpose === 'passant') {
+        const guestId = pi.metadata?.guestId
+        const bookingId = pi.metadata?.bookingId
+        if (guestId) {
+          await prisma.guest.update({
+            where: { id: guestId },
+            data: { paymentStatus: 'paid', paymentRef: pi.id }
+          })
+        }
+        if (bookingId) {
+          await prisma.booking.update({
+            where: { id: bookingId },
+            data: { status: 'confirmed' }
+          })
+        }
+      } else if (purpose === 'waitlist_fee') {
+        const entryId = pi.metadata?.entryId
+        if (entryId) {
+          await prisma.waitlistEntry.update({
+            where: { id: entryId },
+            data: { feePaid: true, feePaymentRef: pi.id }
+          })
+        }
+      }
+      break
+    }
+
+    case 'payment_intent.payment_failed': {
+      const pi = stripeEvent.data.object as Stripe.PaymentIntent
+      const guestId = pi.metadata?.guestId
+      if (guestId) {
+        await prisma.guest.update({
+          where: { id: guestId },
+          data: { paymentStatus: 'failed' }
+        })
+      }
+      break
+    }
   }
 
   return { received: true }
