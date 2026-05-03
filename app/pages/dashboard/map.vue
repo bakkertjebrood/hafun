@@ -71,6 +71,21 @@ const berthTypeOptions: { value: BerthTypeValue, label: string, color: string }[
 // Datumfilter — bekijk de bezetting op een andere dag
 const viewDate = ref('')
 const showLegend = ref(false)
+
+// Wat tonen op de ligplaats-marker. Persist in localStorage zodat de
+// gebruiker bij volgende sessies meteen z'n eigen voorkeur ziet.
+type LabelMode = 'code' | 'boat' | 'customer' | 'length' | 'type' | 'none'
+const LABEL_MODES: LabelMode[] = ['code', 'boat', 'customer', 'length', 'type', 'none']
+const labelMode = ref<LabelMode>('code')
+const labelModeOptions: { value: LabelMode, label: string }[] = [
+  { value: 'code', label: 'Code' },
+  { value: 'boat', label: 'Bootnaam' },
+  { value: 'customer', label: 'Huurder' },
+  { value: 'length', label: 'Lengte' },
+  { value: 'type', label: 'Type' },
+  { value: 'none', label: 'Geen' }
+]
+const LABEL_STORAGE_KEY = 'nautar.map.labelMode'
 const fabOpen = ref(false)
 const pierMenuFor = ref<any | null>(null)
 const pierMenuPos = ref<{ x: number, y: number } | null>(null)
@@ -156,6 +171,13 @@ const pierMenuSideLabels = computed(() => {
 })
 
 onMounted(async () => {
+  if (import.meta.client) {
+    const saved = window.localStorage.getItem(LABEL_STORAGE_KEY)
+    if (saved && (LABEL_MODES as string[]).includes(saved)) {
+      labelMode.value = saved as LabelMode
+    }
+  }
+
   const leaflet = await import('leaflet')
   await import('leaflet/dist/leaflet.css')
   L = leaflet.default || leaflet
@@ -178,6 +200,13 @@ onMounted(async () => {
   if (import.meta.client) {
     window.addEventListener('keydown', onKeyDown)
   }
+})
+
+watch(labelMode, (v) => {
+  if (import.meta.client) {
+    window.localStorage.setItem(LABEL_STORAGE_KEY, v)
+  }
+  if (mapInstance) addBerthMarkers()
 })
 
 onBeforeUnmount(() => {
@@ -783,11 +812,12 @@ function addBerthMarkers() {
     const rot = pier ? (pierBearing(pier) + 90) : 0
 
     // Rectangle size: represent boat (long axis) perpendicular to pier.
-    // Iets groter dan voorheen zodat de code-label leesbaar blijft.
+    // Het label staat als losse pill eronder; de rechthoek hoeft alleen
+    // een herkenbaar bootje te zijn met goede klikmaat.
     const isCoarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
     const touchBoost = isEdit && isCoarse ? 1.5 : 1
-    const w = Math.round((isEdit ? 14 : 12) * touchBoost) // beam (px)
-    const h = Math.round((isEdit ? 28 : 24) * touchBoost) // length (px)
+    const w = Math.round((isEdit ? 16 : 14) * touchBoost) // beam (px)
+    const h = Math.round((isEdit ? 32 : 28) * touchBoost) // length (px)
 
     // Side badge color
     const sideColor = berth.side === 'LEFT'
@@ -800,8 +830,14 @@ function addBerthMarkers() {
 
     const borderColor = isEdit ? sideColor : 'white'
     const typeLabel = statusLabels[berth.type] || berth.type || ''
+    const tooltip = `${berth.code} — ${typeLabel} (${statusLabels[status] || status})`
 
-    const labelFontSize = isEdit ? 8 : 9
+    const labelText = berthDisplayLabel(berth)
+    const pillOffset = Math.ceil(Math.max(w, h) / 2 + 5)
+    const pillHtml = labelText
+      ? `<div class="berth-label-pill" style="top: calc(50% + ${pillOffset}px);">${escapeHtml(labelText)}</div>`
+      : ''
+
     const html = `
       <div class="berth-marker-rot" style="transform: rotate(${rot}deg); transform-origin: center; width: ${w}px; height: ${h}px;">
         <div class="berth-marker" style="
@@ -810,11 +846,9 @@ function addBerthMarkers() {
           box-shadow: 0 1px 4px rgba(0,0,0,0.35);
           cursor: ${isEdit ? 'grab' : 'pointer'};
           transition: transform 0.15s;
-          position: relative;
-        " title="${berth.code} — ${typeLabel} (${statusLabels[status] || status})">
-          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:white;font-size:${labelFontSize}px;font-weight:700;text-shadow:0 0 2px rgba(0,0,0,0.7);transform: rotate(${-rot}deg);">${berthShortCode(berth.code)}</div>
-        </div>
+        " title="${escapeHtml(tooltip)}"></div>
       </div>
+      ${pillHtml}
     `
 
     const icon = L.divIcon({
@@ -863,6 +897,28 @@ function berthShortCode(code: string): string {
   const m = code.match(/^([A-Za-z]+)[^0-9]*?(\d+)/)
   if (m) return `${m[1]}${m[2]}`
   return code.slice(0, 4)
+}
+
+function escapeHtml(s: string): string {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    c === '&' ? '&amp;'
+      : c === '<' ? '&lt;'
+        : c === '>' ? '&gt;'
+          : c === '"' ? '&quot;'
+            : '&#39;'
+  ))
+}
+
+function berthDisplayLabel(berth: any): string {
+  switch (labelMode.value) {
+    case 'none': return ''
+    case 'boat': return berth.boat?.name || ''
+    case 'customer': return berth.customer?.name || ''
+    case 'length': return berth.length ? `${berth.length}m` : ''
+    case 'type': return statusLabels[berth.type] || ''
+    case 'code':
+    default: return berthShortCode(berth.code)
+  }
 }
 
 async function flipBerthSide(berth: any) {
@@ -1526,6 +1582,26 @@ async function deleteFacility(f: any) {
             ×
           </button>
         </div>
+
+        <!-- Wat tonen op de ligplaats-marker -->
+        <label
+          class="hidden lg:inline-flex items-center gap-1 shrink-0"
+          title="Wat tonen op de ligplaats"
+        >
+          <span class="text-[10px] text-[#5A6A78] font-medium">Toon</span>
+          <select
+            v-model="labelMode"
+            class="px-2 py-1 text-[11px] rounded-md border border-black/[0.08] bg-white font-medium text-[#0A1520]"
+          >
+            <option
+              v-for="opt in labelModeOptions"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </option>
+          </select>
+        </label>
 
         <button
           class="hidden lg:inline-flex px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0"
@@ -2399,6 +2475,22 @@ async function deleteFacility(f: any) {
             <UIcon name="i-lucide-list" class="size-4" />
             Legenda
           </button>
+          <label class="px-4 py-2 rounded-full bg-white text-[#0A1520] inline-flex items-center gap-2 shadow-lg backdrop-blur-sm">
+            <UIcon name="i-lucide-tag" class="size-4 text-[#5A6A78]" />
+            <span class="text-sm font-semibold">Toon</span>
+            <select
+              v-model="labelMode"
+              class="bg-transparent text-sm font-semibold text-[#0A1520] outline-none"
+            >
+              <option
+                v-for="opt in labelModeOptions"
+                :key="opt.value"
+                :value="opt.value"
+              >
+                {{ opt.label }}
+              </option>
+            </select>
+          </label>
         </div>
       </Transition>
 
@@ -2423,6 +2515,30 @@ async function deleteFacility(f: any) {
 .berth-marker-wrapper, .pier-label, .facility-marker-wrapper, .pier-vertex, .pier-endpoint, .pier-point-ripple {
   background: none !important;
   border: none !important;
+}
+.berth-marker-wrapper {
+  overflow: visible !important;
+}
+.berth-label-pill {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.96);
+  color: #0A1520;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 2px 7px;
+  border-radius: 10px;
+  border: 1px solid rgba(10, 21, 32, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.25;
 }
 .pier-point-ripple .ripple {
   width: 60px;
