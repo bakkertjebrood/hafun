@@ -792,9 +792,9 @@ function addBerthMarkers() {
           body: { gpsLat: pos.lat, gpsLng: pos.lng }
         })
       })
-      marker.on('click', async () => {
+      marker.on('click', () => {
         if (dragged) { dragged = false; return }
-        await flipBerthSide(berth)
+        openBerth(berth.id)
       })
     } else {
       marker.on('click', () => openBerth(berth.id))
@@ -819,6 +819,7 @@ function berthShortCode(code: string): string {
 }
 
 async function flipBerthSide(berth: any) {
+  if (!berth) return
   const current = berth.side || (berth.code.toUpperCase().includes('KOP') ? 'HEAD' : 'LEFT')
   let next: 'LEFT' | 'RIGHT' | 'HEAD'
   if (current === 'LEFT') next = 'RIGHT'
@@ -835,6 +836,9 @@ async function flipBerthSide(berth: any) {
       body: { marinaId: marinaId.value, pierNames: [berth.pier] }
     })
     await refreshMapData()
+    if (selectedBerth.value && selectedBerth.value.id === berth.id) {
+      selectedBerth.value = { ...selectedBerth.value, side: next }
+    }
     clearMarkers()
     addBerthMarkers()
   } catch (err) {
@@ -1953,6 +1957,22 @@ async function deleteFacility(f: any) {
           class="w-full h-full"
         />
 
+        <!-- Edit-modus banner: altijd zichtbaar zodat duidelijk is dat je in
+             bewerk-modus zit -->
+        <div
+          v-if="editMode && drawMode === 'off'"
+          class="absolute z-[1100] top-3 left-1/2 -translate-x-1/2 bg-amber-50 border border-amber-300 rounded-full shadow-md px-3 py-1.5 text-[12px] font-semibold text-amber-800 inline-flex items-center gap-2 max-w-[90%]"
+        >
+          <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+          <span class="truncate">Bewerk-modus actief</span>
+          <button
+            class="text-amber-700 hover:text-amber-900 -mr-1 underline-offset-2 hover:underline shrink-0"
+            @click="toggleEditMode"
+          >
+            Klaar
+          </button>
+        </div>
+
         <!-- Mobile panel toggle (only shown when closed; close lives inside the panel) -->
         <button
           v-if="!showPanel"
@@ -1965,7 +1985,7 @@ async function deleteFacility(f: any) {
 
         <!-- Edit mode floating "+ Steiger" button -->
         <button
-          v-if="editMode && drawMode === 'off' && !pierMenuFor && !placingFacilityType"
+          v-if="editMode && drawMode === 'off' && !pierMenuFor && !placingFacilityType && !slideOverOpen"
           class="absolute z-[1050] bottom-4 left-4 lg:left-6 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-primary-500 text-white text-sm font-semibold shadow-xl hover:bg-primary-600"
           @click="quickStartDrawPier"
         >
@@ -2134,7 +2154,7 @@ async function deleteFacility(f: any) {
         </div>
       </div>
 
-      <!-- Slide-over: inline on desktop, overlay on mobile -->
+      <!-- Slide-over: inline on desktop, bottom sheet on mobile -->
       <MapBerthSlideOver
         v-if="selectedBerth"
         :berth="selectedBerth"
@@ -2145,6 +2165,7 @@ async function deleteFacility(f: any) {
         @note-added="onNoteAdded"
         @passanten-changed="onStatusChanged"
         @delete-requested="deleteBerthWithConfirm(selectedBerth)"
+        @flip-side="flipBerthSide(selectedBerth)"
       />
     </div>
 
@@ -2158,7 +2179,7 @@ async function deleteFacility(f: any) {
           <button
             class="px-4 py-2.5 rounded-full text-sm font-semibold inline-flex items-center gap-2 shadow-lg backdrop-blur-sm"
             :class="editMode ? 'bg-primary-500 text-white' : 'bg-white text-[#0A1520]'"
-            @click="fabOpen = false; toggleEditMode()"
+            @click="toggleEditMode"
           >
             <UIcon name="i-lucide-pencil-line" class="size-4" />
             {{ editMode ? 'Klaar' : 'Bewerken' }}
@@ -2166,7 +2187,7 @@ async function deleteFacility(f: any) {
           <button
             class="px-4 py-2.5 rounded-full text-sm font-semibold inline-flex items-center gap-2 shadow-lg backdrop-blur-sm"
             :class="showLegend ? 'bg-primary-500/10 text-primary-600' : 'bg-white text-[#0A1520]'"
-            @click="fabOpen = false; showLegend = !showLegend"
+            @click="showLegend = !showLegend"
           >
             <UIcon name="i-lucide-list" class="size-4" />
             Legenda
@@ -2175,12 +2196,17 @@ async function deleteFacility(f: any) {
       </Transition>
 
       <button
-        class="w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-white transition-transform"
-        :class="fabOpen ? 'bg-[#0A1520] rotate-45' : 'bg-primary-500'"
+        class="w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-white transition-transform relative"
+        :class="fabOpen ? 'bg-[#0A1520] rotate-45' : (editMode ? 'bg-primary-500 ring-4 ring-primary-500/30' : 'bg-primary-500')"
         :aria-label="fabOpen ? 'Sluit menu' : 'Open kaartacties'"
         @click="fabOpen = !fabOpen"
       >
         <UIcon name="i-lucide-plus" class="size-6" />
+        <span
+          v-if="editMode && !fabOpen"
+          class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-400 border-2 border-white"
+          aria-hidden="true"
+        />
       </button>
     </div>
   </div>
