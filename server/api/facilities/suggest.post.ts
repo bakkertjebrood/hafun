@@ -29,8 +29,9 @@ export default defineEventHandler(async (event) => {
   const client = new Anthropic({ apiKey: config.claudeApiKey })
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 3000,
+    temperature: 0.2,
     messages: [{
       role: 'user',
       content: [

@@ -292,16 +292,18 @@ function renderVertexHandles() {
 
 function createVertexHandle(point: number[], pier: any, kind: 'main' | 'head', idx: number) {
   const color = kind === 'main' ? '#00A9A5' : '#F59E0B'
+  const isCoarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
+  const size = isCoarse ? 28 : 18
   const icon = L.divIcon({
     className: 'pier-vertex',
     html: `<div style="
-      width: 16px; height: 16px; background: white;
+      width: ${size}px; height: ${size}px; background: white;
       border: 3px solid ${color}; border-radius: 50%;
       box-shadow: 0 1px 4px rgba(0,0,0,0.35);
       cursor: grab;
     "></div>`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8]
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2]
   })
   const marker = L.marker(point, { icon, draggable: true, zIndexOffset: 1000 }).addTo(mapInstance)
 
@@ -568,18 +570,39 @@ async function runAiAnalysis() {
   error.value = null
 
   try {
+    // Wait briefly for any in-flight tile loads at the current zoom
+    await new Promise(r => setTimeout(r, 800))
+
     const html2canvas = (await import('html2canvas-pro')).default
-    const canvas = await html2canvas(mapInstance.getContainer(), {
-      useCORS: true, allowTaint: true, scale: 1
+    const dpr = window.devicePixelRatio || 1
+    const scale = Math.min(Math.max(dpr * 2, 2), 3)
+    const container: HTMLElement = mapInstance.getContainer()
+    const canvas = await html2canvas(container, {
+      useCORS: true,
+      allowTaint: true,
+      scale,
+      logging: false,
+      width: container.offsetWidth,
+      height: container.offsetHeight
     })
+
     const imageBase64 = canvas.toDataURL('image/png')
     const center = mapInstance.getCenter()
+    const b = mapInstance.getBounds()
     const marina = mapData.value?.marina
 
     const result = await $fetch('/api/onboarding/analyze', {
       method: 'POST',
       body: {
         imageBase64,
+        imageWidth: canvas.width,
+        imageHeight: canvas.height,
+        bounds: {
+          north: b.getNorth(),
+          south: b.getSouth(),
+          east: b.getEast(),
+          west: b.getWest()
+        },
         center: { lat: center.lat, lng: center.lng },
         zoom: mapInstance.getZoom(),
         marinaName: marina?.name || ''
@@ -687,8 +710,10 @@ function addBerthMarkers() {
     const rot = pier ? (pierBearing(pier) + 90) : 0
 
     // Rectangle size: represent boat (long axis) perpendicular to pier
-    const w = isEdit ? 14 : 10 // beam (px)
-    const h = isEdit ? 28 : 20 // length (px)
+    const isCoarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
+    const touchBoost = isEdit && isCoarse ? 1.5 : 1
+    const w = Math.round((isEdit ? 14 : 10) * touchBoost) // beam (px)
+    const h = Math.round((isEdit ? 28 : 20) * touchBoost) // length (px)
 
     // Side badge color
     const sideColor = berth.side === 'LEFT'
@@ -1229,8 +1254,16 @@ async function runFacilitySuggest() {
   suggestLoading.value = true
   try {
     const html2canvas = (await import('html2canvas-pro')).default
-    const canvas = await html2canvas(mapInstance.getContainer(), {
-      useCORS: true, allowTaint: true, scale: 1
+    const dpr = window.devicePixelRatio || 1
+    const scale = Math.min(Math.max(dpr * 2, 2), 3)
+    const container: HTMLElement = mapInstance.getContainer()
+    const canvas = await html2canvas(container, {
+      useCORS: true,
+      allowTaint: true,
+      scale,
+      logging: false,
+      width: container.offsetWidth,
+      height: container.offsetHeight
     })
     const imageBase64 = canvas.toDataURL('image/png')
     const bounds = mapInstance.getBounds()
@@ -1347,16 +1380,16 @@ function rejectSuggestion(idx: number) {
           </button>
         </div>
 
-        <!-- Actions -->
+        <!-- Actions (desktop only — mobile uses FAB) -->
         <button
-          class="px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold transition-all shrink-0"
+          class="hidden lg:inline-flex px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold transition-all shrink-0"
           :class="editMode ? 'bg-primary-500 text-white' : 'bg-[#F4F7F8] text-[#5A6A78]'"
           @click="toggleEditMode"
         >
           {{ editMode ? 'Klaar' : 'Bewerken' }}
         </button>
         <button
-          class="px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] transition-all shrink-0 disabled:opacity-50"
+          class="hidden lg:inline-flex px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] transition-all shrink-0 disabled:opacity-50"
           :disabled="aiAnalyzing"
           @click="runAiAnalysis"
         >
@@ -1376,11 +1409,13 @@ function rejectSuggestion(idx: number) {
             class="text-[10px] text-[#5A6A78] hover:text-[#0A1520] px-1"
             title="Datumfilter opheffen"
             @click="viewDate = ''"
-          >×</button>
+          >
+            ×
+          </button>
         </div>
 
         <button
-          class="px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0"
+          class="hidden lg:inline-flex px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0"
           :class="showLegend ? '!bg-primary-500/10 !text-primary-600' : ''"
           title="Legenda"
           @click="showLegend = !showLegend"
@@ -1391,10 +1426,13 @@ function rejectSuggestion(idx: number) {
         <NuxtLink
           to="/dashboard/map-tv"
           target="_blank"
-          class="px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0 inline-flex items-center gap-1"
+          class="hidden lg:inline-flex px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0 items-center gap-1"
           title="TV-modus (fullscreen)"
         >
-          <UIcon name="i-lucide-tv" class="size-3" /> TV
+          <UIcon
+            name="i-lucide-tv"
+            class="size-3"
+          /> TV
         </NuxtLink>
 
         <!-- Status counts (hidden on small mobile) -->
@@ -1421,12 +1459,23 @@ function rejectSuggestion(idx: number) {
       class="absolute z-[500] top-20 right-4 bg-white/95 backdrop-blur-sm border border-black/[0.08] rounded-[12px] shadow-lg p-3 w-[200px]"
     >
       <div class="flex items-center justify-between mb-2">
-        <div class="text-[11px] uppercase tracking-widest text-[#5A6A78] font-semibold">Legenda</div>
-        <button class="text-[#5A6A78] hover:text-[#0A1520]" @click="showLegend = false">
-          <UIcon name="i-lucide-x" class="size-3.5" />
+        <div class="text-[11px] uppercase tracking-widest text-[#5A6A78] font-semibold">
+          Legenda
+        </div>
+        <button
+          class="text-[#5A6A78] hover:text-[#0A1520]"
+          @click="showLegend = false"
+        >
+          <UIcon
+            name="i-lucide-x"
+            class="size-3.5"
+          />
         </button>
       </div>
-      <div v-if="viewDate" class="text-[10px] text-primary-600 mb-2">
+      <div
+        v-if="viewDate"
+        class="text-[10px] text-primary-600 mb-2"
+      >
         Bezetting op {{ new Date(viewDate).toLocaleDateString('nl-NL') }}
       </div>
       <div class="space-y-1">
@@ -1436,7 +1485,10 @@ function rejectSuggestion(idx: number) {
           class="flex items-center justify-between text-[11px]"
         >
           <div class="flex items-center gap-1.5">
-            <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: statusColors[key] }" />
+            <span
+              class="w-2.5 h-2.5 rounded-full shrink-0"
+              :style="{ background: statusColors[key] }"
+            />
             <span class="text-[#0A1520]">{{ label }}</span>
           </div>
           <span class="font-mono font-semibold text-[#5A6A78]">{{ counts[key] ?? 0 }}</span>
@@ -2071,6 +2123,23 @@ function rejectSuggestion(idx: number) {
         </div>
       </div>
     </Transition>
+
+    <!-- Mobile floating action button — replaces overflow topbar buttons -->
+    <MapActionsFab
+      :edit-mode="editMode"
+      :ai-analyzing="aiAnalyzing"
+      :show-legend="showLegend"
+      @toggle-edit="toggleEditMode"
+      @run-ai="runAiAnalysis"
+      @toggle-legend="showLegend = !showLegend"
+    />
+
+    <!-- Setup wizard CTA when marina has no piers yet -->
+    <MapSetupWizardCta
+      v-if="!aiAnalyzing && drawnPiers.length === 0"
+      :marina-name="mapData?.marina?.name"
+      :has-piers="false"
+    />
   </div>
 </template>
 
