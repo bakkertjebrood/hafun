@@ -7,6 +7,7 @@ let L: any = null
 
 const selectedBerth = ref<any>(null)
 const showCustomerSearch = ref(false)
+const showBoatPhotoEditor = ref(false)
 const slideOverOpen = ref(false)
 const activePier = ref<string | null>(null)
 const loading = ref(true)
@@ -948,6 +949,13 @@ async function onStatusChanged() {
 async function onCustomerLinked() {
   showCustomerSearch.value = false
   await onStatusChanged()
+}
+
+async function onBoatPhotoSaved() {
+  showBoatPhotoEditor.value = false
+  if (selectedBerth.value) {
+    selectedBerth.value = await $fetch(`/api/berths/${selectedBerth.value.id}`)
+  }
 }
 
 async function onNoteAdded() {
@@ -2345,6 +2353,7 @@ async function deleteFacility(f: any) {
         @delete-requested="deleteBerthWithConfirm(selectedBerth)"
         @flip-side="flipBerthSide(selectedBerth)"
         @link-customer="showCustomerSearch = true"
+        @edit-boat-photo="showBoatPhotoEditor = true"
       />
     </div>
 
@@ -2355,6 +2364,16 @@ async function deleteFacility(f: any) {
       :marina-id="marinaId"
       @close="showCustomerSearch = false"
       @linked="onCustomerLinked"
+    />
+
+    <!-- Bootfoto uploaden / croppen / spiegelen / comprimeren -->
+    <BoatBoatPhotoEditor
+      v-if="showBoatPhotoEditor && selectedBerth?.boat"
+      :boat-id="selectedBerth.boat.id"
+      :current-public-id="selectedBerth.boat.photo"
+      @close="showBoatPhotoEditor = false"
+      @saved="onBoatPhotoSaved"
+      @removed="onBoatPhotoSaved()"
     />
 
     <!-- Mobile floating action button (Bewerken + Legenda) -->
