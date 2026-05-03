@@ -30,6 +30,9 @@ Vereiste environment variables (`heroku config:set ...`):
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
 | `POSTMARK_API_KEY` | Postmark Server token (transactionele mail) |
 | `EMAIL_FROM` | Geverifieerd Postmark sender adres |
+| `CLOUDINARY_CLOUD_NAME` | Cloudinary cloud name (publiek, in delivery URLs) |
+| `CLOUDINARY_API_KEY` | Cloudinary API key (voor signed uploads) |
+| `CLOUDINARY_API_SECRET` | Cloudinary API secret (server-side, voor signing) |
 
 ### Google OAuth
 
