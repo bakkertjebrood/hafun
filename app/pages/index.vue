@@ -70,13 +70,24 @@ const steps = [
   { n: '02', title: 'Teken je haven', desc: 'Teken steigers op de satellietkaart en voeg ligplaatsen toe.' },
   { n: '03', title: 'Begin met beheren', desc: 'Importeer huurders, koppel boekhouding, en je bent live.' }
 ]
+
+const navLinks = [
+  { href: '#features', label: 'Functionaliteit' },
+  { href: '#self-service', label: 'Self-service' },
+  { href: '#hoe', label: 'Zo werkt het' },
+  { href: '#integratie', label: 'Integratie' },
+  { href: '#prijzen', label: 'Prijzen' }
+]
+
+const mobileMenuOpen = ref(false)
+function closeMenu() { mobileMenuOpen.value = false }
 </script>
 
 <template>
   <div class="min-h-[100dvh] bg-white text-[#0A1520]">
     <!-- Header -->
     <header class="sticky top-0 z-50 bg-white/85 backdrop-blur-md border-b border-black/[0.05]">
-      <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
         <NuxtLink
           to="/"
           class="flex items-center"
@@ -85,21 +96,11 @@ const steps = [
         </NuxtLink>
         <nav class="hidden md:flex items-center gap-7 text-sm font-medium text-[#2D3E4A]">
           <a
-            href="#features"
+            v-for="l in navLinks"
+            :key="l.href"
+            :href="l.href"
             class="hover:text-[#0A1520] transition-colors"
-          >Functionaliteit</a>
-          <a
-            href="#self-service"
-            class="hover:text-[#0A1520] transition-colors"
-          >Self-service</a>
-          <a
-            href="#hoe"
-            class="hover:text-[#0A1520] transition-colors"
-          >Zo werkt het</a>
-          <a
-            href="#prijzen"
-            class="hover:text-[#0A1520] transition-colors"
-          >Prijzen</a>
+          >{{ l.label }}</a>
         </nav>
         <div class="flex items-center gap-2">
           <NuxtLink
@@ -110,12 +111,58 @@ const steps = [
           </NuxtLink>
           <NuxtLink
             to="/register"
-            class="px-4 py-2 rounded-full bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600 transition-colors"
+            class="hidden sm:inline-flex px-4 py-2 rounded-full bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600 transition-colors"
           >
             Start gratis
           </NuxtLink>
+          <button
+            type="button"
+            class="md:hidden inline-flex items-center justify-center size-10 rounded-full hover:bg-black/[0.04] transition-colors"
+            :aria-label="mobileMenuOpen ? 'Sluit menu' : 'Open menu'"
+            :aria-expanded="mobileMenuOpen"
+            @click="mobileMenuOpen = !mobileMenuOpen"
+          >
+            <UIcon :name="mobileMenuOpen ? 'i-lucide-x' : 'i-lucide-menu'" class="size-5" />
+          </button>
         </div>
       </div>
+      <Transition
+        enter-active-class="transition-opacity duration-150"
+        leave-active-class="transition-opacity duration-100"
+        enter-from-class="opacity-0"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="mobileMenuOpen"
+          class="md:hidden border-t border-black/[0.05] bg-white"
+        >
+          <nav class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex flex-col">
+            <a
+              v-for="l in navLinks"
+              :key="l.href"
+              :href="l.href"
+              class="py-3 text-sm font-medium text-[#2D3E4A] hover:text-[#0A1520] border-b border-black/[0.04] last:border-0"
+              @click="closeMenu"
+            >{{ l.label }}</a>
+            <div class="flex flex-col gap-2 pt-4 pb-2">
+              <NuxtLink
+                to="/login"
+                class="h-11 inline-flex items-center justify-center rounded-full text-sm font-semibold text-[#0A1520] border border-black/[0.08]"
+                @click="closeMenu"
+              >
+                Inloggen
+              </NuxtLink>
+              <NuxtLink
+                to="/register"
+                class="h-11 inline-flex items-center justify-center rounded-full bg-primary-500 text-white text-sm font-semibold"
+                @click="closeMenu"
+              >
+                Start gratis
+              </NuxtLink>
+            </div>
+          </nav>
+        </div>
+      </Transition>
     </header>
 
     <!-- Hero -->
