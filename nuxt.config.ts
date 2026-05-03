@@ -45,7 +45,7 @@ export default defineNuxtConfig({
     googleClientId: process.env.GOOGLE_CLIENT_ID || '',
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     postmarkApiKey: process.env.POSTMARK_API_KEY || '',
-    emailFrom: process.env.EMAIL_FROM || 'no-reply@nautar.app',
+    emailFrom: process.env.EMAIL_FROM || 'no-reply@nautar.nl',
     appUrl: process.env.APP_URL || '',
     public: {
       googleEnabled: !!process.env.GOOGLE_CLIENT_ID
