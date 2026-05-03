@@ -272,6 +272,5 @@ Voorbeelden van meldingen uit het systeem:
 3. **Mobile-first** — responsive maar niet mobile-first
 4. **API** — geen REST API voor app-integratie
 5. **Satellietkaart** — alleen OpenStreetMap (geen luchtfoto)
-6. **AI-functies** — geen automatische detectie of positionering
-7. **Drag & drop** — geen interactieve marker plaatsing
-8. **Real-time updates** — geen WebSocket/live updates
+6. **Drag & drop** — geen interactieve marker plaatsing
+7. **Real-time updates** — geen WebSocket/live updates

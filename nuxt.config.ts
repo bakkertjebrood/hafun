@@ -43,7 +43,6 @@ export default defineNuxtConfig({
   runtimeConfig: {
     jwtSecret: process.env.JWT_SECRET || 'nautar-dev-secret-change-in-production',
     databaseUrl: process.env.DATABASE_URL || '',
-    claudeApiKey: process.env.CLAUDE_API_KEY || '',
     googleClientId: process.env.GOOGLE_CLIENT_ID || '',
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     postmarkApiKey: process.env.POSTMARK_API_KEY || '',
