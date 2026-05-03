@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
       gpsLat: true,
       gpsLng: true,
       side: true,
-      customer: { select: { name: true } },
+      customer: { select: { id: true, name: true } },
       boat: { select: { name: true } }
     },
     orderBy: [{ pier: 'asc' }, { code: 'asc' }]
@@ -59,6 +59,7 @@ export default defineEventHandler(async (event) => {
       select: {
         berthId: true,
         status: true,
+        customerId: true,
         guest: { select: { name: true } },
         customer: { select: { name: true } }
       }
@@ -72,7 +73,12 @@ export default defineEventHandler(async (event) => {
     // Afleiden van een "visueel" status voor de kaart
     let displayStatus: string = b.status
     if (date && booking) {
-      displayStatus = b.isPassanten ? 'PASSANT' : 'OCCUPIED'
+      // Vaste plek met booking voor iemand anders dan de vaste klant = SUBLET
+      // (vaste ligger weg, tijdelijk aan een andere boot verhuurd)
+      const sublet = !b.isPassanten
+        && b.customer?.id != null
+        && booking.customerId !== b.customer.id
+      displayStatus = sublet ? 'SUBLET' : (b.isPassanten ? 'PASSANT' : 'OCCUPIED')
     }
     if (hasNote && !date) displayStatus = 'MELDING'
     return {
@@ -90,6 +96,7 @@ export default defineEventHandler(async (event) => {
     FREE: 0,
     OCCUPIED: 0,
     PASSANT: 0,
+    SUBLET: 0,
     SEASONAL: 0,
     STORAGE: 0,
     TEMPORARY: 0,
