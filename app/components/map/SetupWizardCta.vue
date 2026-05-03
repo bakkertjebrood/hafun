@@ -12,7 +12,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="absolute z-[600] inset-x-3 top-3 lg:top-4 lg:inset-x-auto lg:left-1/2 lg:-translate-x-1/2 lg:max-w-md pointer-events-none">
+  <div class="absolute z-[1100] inset-x-3 top-3 lg:top-4 lg:inset-x-auto lg:left-1/2 lg:-translate-x-1/2 lg:max-w-md pointer-events-none">
     <div class="bg-white rounded-[16px] shadow-xl border border-black/[0.08] p-3.5 pointer-events-auto">
       <div class="flex items-start gap-3">
         <div class="w-9 h-9 rounded-[10px] bg-primary-500/10 text-primary-600 flex items-center justify-center shrink-0">
