@@ -11,8 +11,8 @@ const features = [
   },
   {
     icon: 'i-lucide-calendar-check',
-    title: 'Reserveringen & wachtlijst',
-    desc: 'Vaste huurders, passanten en wachtlijst. Met automatische plaatsing en notificaties.'
+    title: 'Reserveringen, wachtlijst & QR-passanten',
+    desc: 'Vaste huurders, passanten en wachtlijst. Met automatische plaatsing, notificaties én optionele QR-aanmelding.'
   },
   {
     icon: 'i-lucide-receipt',
@@ -32,8 +32,37 @@ const features = [
   {
     icon: 'i-lucide-users',
     title: 'Huurdersportaal',
-    desc: 'Eigen login voor je huurders: facturen, gegevens, ligplaats. Minder telefoontjes.'
+    desc: 'Eigen login voor je huurders: facturen, gegevens, ligplaats én vakantie-afmelding. Minder telefoontjes.'
+  },
+  {
+    icon: 'i-lucide-link-2',
+    title: 'Werkt met je website',
+    desc: 'Drop een knop of iframe op je huidige WordPress- of Squarespace-site, of laat ons je publieke pagina hosten.'
   }
+]
+
+const selfServiceCards = [
+  {
+    title: 'Passanten met QR',
+    desc: 'Gasten scannen een QR aan de steiger, vullen hun gegevens in en betalen direct. De havenmeester ziet alles binnenkomen.',
+    illustration: 'passant'
+  },
+  {
+    title: 'Vakantie van vaste liggers',
+    desc: 'Ligplaatshouders melden via het portaal wanneer hun boot weg is. Optioneel laat je hun plek verhuren — met credit op hun factuur.',
+    illustration: 'absence'
+  },
+  {
+    title: 'Wachtlijst-zelfinschrijving',
+    desc: 'Geïnteresseerden vullen zelf het inschrijfformulier in op je publieke pagina. Met optionele aanmeldfee via Stripe Connect.',
+    illustration: 'waitlist'
+  }
+] as const
+
+const integrationModes = [
+  { mode: 'link' as const, title: 'Knop op je site', desc: 'Eén HTML-link naar je hosted aanmeldpagina. Werkt overal.' },
+  { mode: 'iframe' as const, title: 'Iframe-embed', desc: 'Toon de flow ín je eigen pagina, met automatische hoogte.' },
+  { mode: 'hosted' as const, title: 'Volledig hosted', desc: 'Geen eigen site? Wij hosten je marina-pagina onder /h/jouw-haven.' }
 ]
 
 const steps = [
@@ -59,6 +88,10 @@ const steps = [
             href="#features"
             class="hover:text-[#0A1520] transition-colors"
           >Functionaliteit</a>
+          <a
+            href="#self-service"
+            class="hover:text-[#0A1520] transition-colors"
+          >Self-service</a>
           <a
             href="#hoe"
             class="hover:text-[#0A1520] transition-colors"
@@ -88,38 +121,83 @@ const steps = [
     <!-- Hero -->
     <section class="relative overflow-hidden">
       <div class="absolute inset-0 -z-10 bg-gradient-to-b from-primary-50 via-white to-white" />
-      <div class="max-w-6xl mx-auto px-4 sm:px-6 py-20 lg:py-28 text-center">
-        <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-500/10 text-primary-700 text-xs font-semibold tracking-wide">
-          <span class="size-1.5 rounded-full bg-primary-500" />
-          Marina management, op stroom
-        </span>
-        <h1 class="mt-6 text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight leading-[1.05]">
-          De rustigste manier<br>
-          om je <span class="text-primary-500">jachthaven</span> te runnen.
-        </h1>
-        <p class="mt-6 max-w-2xl mx-auto text-base sm:text-lg text-[#2D3E4A] leading-relaxed">
-          Eén systeem voor ligplaatsen, huurders, facturen, kassa en meer. Gebouwd door en voor havenmeesters in Nederland.
-        </p>
-        <div class="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3">
-          <NuxtLink
-            to="/register"
-            class="w-full sm:w-auto px-6 h-12 inline-flex items-center justify-center gap-2 rounded-full bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600 transition-colors"
-          >
-            Start gratis proefperiode
-            <UIcon
-              name="i-lucide-arrow-right"
-              class="size-4"
-            />
-          </NuxtLink>
-          <NuxtLink
-            to="/login"
-            class="w-full sm:w-auto px-6 h-12 inline-flex items-center justify-center rounded-full bg-white border border-black/[0.08] text-sm font-semibold text-[#0A1520] hover:bg-[#F4F7F8] transition-colors"
-          >
-            Ik heb al een account
-          </NuxtLink>
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 py-16 lg:py-24 grid lg:grid-cols-2 gap-12 items-center">
+        <div class="text-center lg:text-left">
+          <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-500/10 text-primary-700 text-xs font-semibold tracking-wide">
+            <span class="size-1.5 rounded-full bg-primary-500" />
+            Marina management, op stroom
+          </span>
+          <h1 class="mt-6 text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight leading-[1.05]">
+            De rustigste manier<br>
+            om je <span class="text-primary-500">jachthaven</span> te runnen.
+          </h1>
+          <p class="mt-6 max-w-2xl text-base sm:text-lg text-[#2D3E4A] leading-relaxed">
+            Eén systeem voor ligplaatsen, huurders, facturen, kassa <strong class="font-semibold">én optionele self-service voor je gasten</strong>. Gebouwd door en voor havenmeesters in Nederland.
+          </p>
+          <div class="mt-9 flex flex-col sm:flex-row items-center lg:justify-start justify-center gap-3">
+            <NuxtLink
+              to="/register"
+              class="w-full sm:w-auto px-6 h-12 inline-flex items-center justify-center gap-2 rounded-full bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600 transition-colors"
+            >
+              Start gratis proefperiode
+              <UIcon
+                name="i-lucide-arrow-right"
+                class="size-4"
+              />
+            </NuxtLink>
+            <NuxtLink
+              to="/login"
+              class="w-full sm:w-auto px-6 h-12 inline-flex items-center justify-center rounded-full bg-white border border-black/[0.08] text-sm font-semibold text-[#0A1520] hover:bg-[#F4F7F8] transition-colors"
+            >
+              Ik heb al een account
+            </NuxtLink>
+          </div>
+          <p class="mt-4 text-xs text-[#5A6A78]">
+            Geen creditcard nodig · Setup in 5 minuten · Nederlands
+          </p>
         </div>
-        <p class="mt-4 text-xs text-[#5A6A78]">
-          Geen creditcard nodig · Setup in 5 minuten · Nederlands
+        <div class="relative">
+          <HeroSelfService class="w-full max-w-lg mx-auto text-primary-500" />
+        </div>
+      </div>
+    </section>
+
+    <!-- Self-service -->
+    <section
+      id="self-service"
+      class="bg-[#FBFAF6] border-y border-black/[0.04]"
+    >
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 py-16 lg:py-24">
+        <div class="text-center max-w-2xl mx-auto mb-12">
+          <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-500/10 text-primary-700 text-xs font-semibold tracking-wide">
+            Optioneel & opt-in
+          </span>
+          <h2 class="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight">
+            Laat je gasten zichzelf inboeken
+          </h2>
+          <p class="mt-3 text-[#2D3E4A]">
+            Drie niveaus van zelfbediening — schakel ze één voor één in als je er klaar voor bent.
+          </p>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div
+            v-for="card in selfServiceCards"
+            :key="card.title"
+            class="bg-white border border-black/[0.06] rounded-[18px] p-6"
+          >
+            <PassantQR v-if="card.illustration === 'passant'" class="size-20 text-primary-500 mb-4" />
+            <AbsenceVacation v-else-if="card.illustration === 'absence'" class="size-20 text-primary-500 mb-4" />
+            <WaitlistSignup v-else class="size-20 text-primary-500 mb-4" />
+            <h3 class="text-base font-semibold tracking-tight">
+              {{ card.title }}
+            </h3>
+            <p class="mt-1.5 text-sm text-[#2D3E4A] leading-relaxed">
+              {{ card.desc }}
+            </p>
+          </div>
+        </div>
+        <p class="mt-8 text-center text-sm text-[#2D3E4A]">
+          Werkt naast je bestaande website — knop, iframe of volledig hosted. <a href="#integratie" class="text-primary-600 font-semibold">Hoe →</a>
         </p>
       </div>
     </section>
@@ -219,7 +297,7 @@ const steps = [
         </p>
         <ul class="mt-6 space-y-3 text-sm">
           <li
-            v-for="t in ['Onbeperkt ligplaatsen & huurders', 'Reserveringen, wachtlijst, agenda', 'Offertes, werkbonnen, kassa', 'Facturatie + Moneybird sync', 'Huurdersportaal', 'Mutatielog & dagafsluiting']"
+            v-for="t in ['Onbeperkt ligplaatsen & huurders', 'Reserveringen, wachtlijst, agenda', 'Offertes, werkbonnen, kassa', 'Facturatie + Moneybird sync', 'Huurdersportaal & vakantie-melding', 'Self-service voor passanten en wachtlijst', 'Mutatielog & dagafsluiting']"
             :key="t"
             class="flex gap-2.5 items-start"
           >
@@ -239,6 +317,41 @@ const steps = [
         <p class="mt-3 text-center text-xs text-[#5A6A78]">
           30 dagen gratis · maandelijks opzegbaar
         </p>
+        <p class="mt-2 text-center text-[10px] text-[#5A6A78]">
+          Bij online betalingen via self-service gelden Stripe Connect-tarieven.
+        </p>
+      </div>
+    </section>
+
+    <!-- Integratie -->
+    <section
+      id="integratie"
+      class="bg-[#0A1520] text-white"
+    >
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 py-16 lg:py-20">
+        <div class="text-center max-w-2xl mx-auto mb-12">
+          <h2 class="text-3xl sm:text-4xl font-semibold tracking-tight">
+            Zo integreer je het
+          </h2>
+          <p class="mt-3 text-white/70">
+            Drie manieren om Nautar self-service in te zetten — kies wat past bij je site.
+          </p>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div
+            v-for="m in integrationModes"
+            :key="m.mode"
+            class="bg-white/[0.04] border border-white/10 rounded-[18px] p-6"
+          >
+            <IntegrationModes :mode="m.mode" class="size-16 text-primary-300 mb-4" />
+            <h3 class="text-base font-semibold tracking-tight">
+              {{ m.title }}
+            </h3>
+            <p class="mt-1.5 text-sm text-white/70 leading-relaxed">
+              {{ m.desc }}
+            </p>
+          </div>
+        </div>
       </div>
     </section>
 

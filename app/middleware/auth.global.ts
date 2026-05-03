@@ -1,8 +1,10 @@
 const PUBLIC_ROUTES = new Set<string>(['/', '/login', '/register', '/privacy', '/voorwaarden'])
+const PUBLIC_PREFIXES = ['/h/', '/embed/']
 const SETUP_ROUTE = '/onboarding'
 
 export default defineNuxtRouteMiddleware(async (to) => {
   const isPublic = PUBLIC_ROUTES.has(to.path)
+    || PUBLIC_PREFIXES.some(p => to.path.startsWith(p))
 
   const { user, fetchMe } = useAuthUser()
   if (!user.value) {
@@ -21,7 +23,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return navigateTo({ path: '/login', query: { redirect: to.fullPath } })
   }
 
-  // Huurders worden naar het portaal gestuurd
+  // Huurders worden naar het portaal gestuurd (publieke routes hierboven al toegestaan)
   if (user.value.role === 'PORTAL') {
     if (!to.path.startsWith('/portal')) {
       return navigateTo('/portal')

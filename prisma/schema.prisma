@@ -20,6 +20,14 @@ model Marina {
   stripeCustomerId String?  @unique
   stripeSubscriptionId String?
   stripeCurrentPeriodEnd DateTime?
+  // Self-service / public surface
+  logoUrl                     String?
+  accentColor                 String?  // hex, e.g. "#00A9A5"
+  publicBio                   String?
+  stripeConnectAccountId      String?  @unique
+  stripeConnectChargesEnabled Boolean  @default(false)
+  allowedEmbedOrigins         String[] @default([])
+  webhookUrl                  String?
   gpsLat           Float?
   gpsLng           Float?
   setupComplete    Boolean  @default(false)
@@ -47,6 +55,7 @@ model Marina {
   posProducts    PosProduct[]
   posTransactions PosTransaction[]
   payments       Payment[]
+  absences       BerthAbsence[]
 }
 
 // Pier geometry — drawn on the map
@@ -180,6 +189,7 @@ model Berth {
   bookings Booking[]
   meterReadings MeterReading[]
   workOrders WorkOrder[]
+  absences BerthAbsence[]
 
   @@index([marinaId])
   @@index([marinaId, pier])
@@ -212,6 +222,7 @@ model Customer {
   quotes     Quote[]
   workOrders WorkOrder[]
   meterReadings MeterReading[]
+  absences   BerthAbsence[]
 
   @@index([marinaId])
 }
@@ -249,6 +260,9 @@ model Booking {
   dateTo     DateTime
   status     String   @default("reserved")
   persons    Int      @default(1)
+  source     String   @default("staff")   // "staff" | "self_service"
+  invoiceId  String?
+  absenceId  String?  // when this booking re-lets a vaste-ligger absence
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -257,22 +271,29 @@ model Booking {
   customer Customer? @relation(fields: [customerId], references: [id])
   guest    Guest?    @relation(fields: [guestId], references: [id])
   boat     Boat?     @relation(fields: [boatId], references: [id])
+  absence  BerthAbsence? @relation(fields: [absenceId], references: [id])
 
   @@index([marinaId])
   @@index([marinaId, berthId])
 }
 
 model Guest {
-  id         String    @id @default(uuid())
-  marinaId   String
-  name       String
-  boatName   String?
-  boatLength Float?
-  arrival    DateTime
-  departure  DateTime?
-  persons    Int       @default(1)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id            String    @id @default(uuid())
+  marinaId      String
+  name          String
+  email         String?
+  phone         String?
+  boatName      String?
+  boatLength    Float?
+  arrival       DateTime
+  departure     DateTime?
+  persons       Int       @default(1)
+  source        String    @default("staff")    // "staff" | "self_service"
+  checkinToken  String?   @unique              // QR / digital receipt
+  paymentStatus String    @default("none")     // none | pending | paid | failed
+  paymentRef    String?                        // Stripe PaymentIntent id
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   marina   Marina    @relation(fields: [marinaId], references: [id])
   bookings Booking[]
@@ -399,12 +420,42 @@ model WaitlistEntry {
   notes       String?
   priority    Int      @default(0)
   status      String   @default("waiting") // waiting, offered, accepted, rejected, archived
+  source        String    @default("staff")  // "staff" | "self_service"
+  feeRequired   Boolean   @default(false)
+  feePaid       Boolean   @default(false)
+  feePaymentRef String?
+  consentAt     DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   marina Marina @relation(fields: [marinaId], references: [id])
 
   @@index([marinaId])
+}
+
+// Vaste-ligger meldt afwezigheid (vakantie, dok-werk, etc.)
+model BerthAbsence {
+  id              String   @id @default(uuid())
+  marinaId        String
+  berthId         String
+  customerId      String
+  dateFrom        DateTime
+  dateTo          DateTime
+  releaseForRelet Boolean  @default(false)
+  status          String   @default("declared") // declared | acknowledged | cancelled
+  note            String?
+  creditAmount    Float?   // gevuld bij relet als haven credit-config heeft
+  creditInvoiceId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  marina   Marina    @relation(fields: [marinaId], references: [id])
+  berth    Berth     @relation(fields: [berthId], references: [id])
+  customer Customer  @relation(fields: [customerId], references: [id])
+  bookings Booking[]
+
+  @@index([marinaId, dateFrom, dateTo])
+  @@index([berthId])
 }
 
 // Agenda / kalender

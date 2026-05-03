@@ -65,6 +65,10 @@ const outstanding = computed(() => {
       <div class="max-w-[900px] mx-auto px-4 py-4 flex items-center justify-between">
         <NautarLogo :size="18" />
         <div class="flex items-center gap-3">
+          <NuxtLink to="/portal/absences" class="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-[#2D3E4A] hover:text-[#0A1520]">
+            <UIcon name="i-lucide-calendar-off" class="size-4" />
+            <span>Afwezigheid</span>
+          </NuxtLink>
           <div class="text-right hidden sm:block">
             <div class="text-xs text-[#5A6A78]">{{ data?.marina?.name }}</div>
             <div class="text-sm font-semibold text-[#0A1520]">{{ user?.firstName }} {{ user?.lastName }}</div>
