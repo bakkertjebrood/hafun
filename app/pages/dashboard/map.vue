@@ -600,6 +600,7 @@ async function runAiAnalysis() {
   if (!mapInstance) return
   aiAnalyzing.value = true
   error.value = null
+  disableAiTapMode()
 
   try {
     // Wait briefly for any in-flight tile loads at the current zoom
@@ -642,8 +643,25 @@ async function runAiAnalysis() {
     })
 
     aiResult.value = result
-    aiReviewPiers.value = (result.piers || []).map(normalizeAiPier)
-    aiWarnings.value = result.warnings || []
+    const incoming: AiReviewPier[] = (result.piers || []).map(normalizeAiPier)
+    const renameNotes: string[] = []
+    // Auto-rename to avoid clobbering existing piers in this marina.
+    const used = new Set<string>(drawnPiers.value.map((p: any) => p.name as string))
+    for (const p of incoming) {
+      let candidate = p.name
+      let suffix = 1
+      while (used.has(candidate)) {
+        candidate = `${p.name}${suffix}`
+        suffix += 1
+      }
+      if (candidate !== p.name) {
+        renameNotes.push(`Steiger ${p.name} hernoemd naar ${candidate} (bestond al)`)
+        p.name = candidate
+      }
+      used.add(candidate)
+    }
+    aiReviewPiers.value = incoming
+    aiWarnings.value = [...(result.warnings || []), ...renameNotes]
     drawAiReviewPiers()
     showAiResult.value = true
     if (aiReviewPiers.value.length > 0) {
@@ -950,21 +968,38 @@ async function applyAiResult() {
       }
       await $fetch('/api/piers', { method: 'POST', body })
 
-      // Create berths if they don't exist for this pier
+      // Create berths if none exist yet for this pier.
+      // Skip if any berth already exists to avoid duplicating a manually-set-up pier.
       const existingBerths = (mapData.value?.berths || []).filter((b: any) => b.pier === pier.name)
-      const totalNeeded = (pier.leftBerths || 0) + (pier.rightBerths || 0) + (pier.hasHead ? pier.headBerths : 0)
-
-      if (existingBerths.length === 0 && totalNeeded > 0) {
-        await $fetch('/api/berths/bulk', {
-          method: 'POST',
-          body: {
-            marinaId: marinaId.value,
-            pier: pier.name,
-            count: totalNeeded,
-            length: pier.avgBerthLength || 10,
-            width: pier.avgBerthWidth || 3.5
-          }
-        })
+      if (existingBerths.length === 0) {
+        const length = pier.avgBerthLength || 10
+        const width = pier.avgBerthWidth || 3.5
+        if (pier.leftBerths > 0) {
+          await $fetch('/api/berths/bulk', {
+            method: 'POST',
+            body: { marinaId: marinaId.value, pier: pier.name, count: pier.leftBerths, length, width, side: 'LEFT' }
+          })
+        }
+        if (pier.rightBerths > 0) {
+          await $fetch('/api/berths/bulk', {
+            method: 'POST',
+            body: { marinaId: marinaId.value, pier: pier.name, count: pier.rightBerths, length, width, side: 'RIGHT' }
+          })
+        }
+        if (pier.hasHead && pier.headBerths > 0) {
+          await $fetch('/api/berths/bulk', {
+            method: 'POST',
+            body: {
+              marinaId: marinaId.value,
+              pier: pier.name,
+              count: pier.headBerths,
+              length,
+              width,
+              side: 'HEAD',
+              codePrefix: `${pier.name}-KOP`
+            }
+          })
+        }
       }
     }
 

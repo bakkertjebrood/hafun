@@ -8,6 +8,7 @@ interface BulkBody {
   width?: number
   isPassanten?: boolean
   codePrefix?: string
+  side?: 'LEFT' | 'RIGHT' | 'HEAD'
 }
 
 export default defineEventHandler(async (event) => {
@@ -33,6 +34,7 @@ export default defineEventHandler(async (event) => {
 
   const existingCount = await prisma.berth.count({ where: { marinaId, pier: body.pier } })
   const prefix = (body.codePrefix || body.pier).trim()
+  const side = body.side === 'LEFT' || body.side === 'RIGHT' || body.side === 'HEAD' ? body.side : null
 
   const data = Array.from({ length: count }, (_, i) => {
     const seq = existingCount + i + 1
@@ -42,7 +44,8 @@ export default defineEventHandler(async (event) => {
       code: `${prefix}${String(seq).padStart(2, '0')}-${length}m`,
       length,
       width,
-      isPassanten: !!body.isPassanten
+      isPassanten: !!body.isPassanten,
+      side
     }
   })
 

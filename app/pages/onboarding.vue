@@ -281,6 +281,15 @@ async function goBackToMap() {
       name: selectedLocation.value?.name || ''
     }
   }
+  // Reset polygon state — its layers were already disposed with the previous map
+  polygonPoints.value = []
+  polygonLayer = null
+  polygonPreview = null
+  polygonVertexLayers.length = 0
+  drawingPolygon.value = false
+  restrictArea.value = false
+  // Reset tap state too in case the user was mid-tap when going back
+  disableTapMode()
   step.value = 2
   await nextTick()
   if (!mapContainer.value) return
@@ -555,19 +564,24 @@ async function confirmSetup() {
 
   try {
     const center = mapInstance?.getCenter()
-    const piersData = piers.value.map(p => ({
-      name: p.name,
-      hasHead: p.hasHead,
-      headBerths: p.headBerths,
-      berths: [{
-        length: p.avgBerthLength,
-        width: p.avgBerthWidth,
-        count: p.leftBerths + p.rightBerths,
-        isPassanten: false
-      }, ...(p.hasHead && p.headBerths > 0
-        ? [{ length: p.avgBerthLength, width: p.avgBerthWidth, count: p.headBerths, isPassanten: false }]
-        : [])]
-    }))
+    const piersData = piers.value.map((p) => {
+      const berths: { length: number, width: number, count: number, isPassanten: boolean, side?: 'LEFT' | 'RIGHT' | 'HEAD' }[] = []
+      if (p.leftBerths > 0) {
+        berths.push({ length: p.avgBerthLength, width: p.avgBerthWidth, count: p.leftBerths, isPassanten: false, side: 'LEFT' })
+      }
+      if (p.rightBerths > 0) {
+        berths.push({ length: p.avgBerthLength, width: p.avgBerthWidth, count: p.rightBerths, isPassanten: false, side: 'RIGHT' })
+      }
+      if (p.hasHead && p.headBerths > 0) {
+        berths.push({ length: p.avgBerthLength, width: p.avgBerthWidth, count: p.headBerths, isPassanten: false, side: 'HEAD' })
+      }
+      return {
+        name: p.name,
+        hasHead: p.hasHead,
+        headBerths: p.headBerths,
+        berths
+      }
+    })
 
     await $fetch('/api/onboarding/setup', {
       method: 'POST',
