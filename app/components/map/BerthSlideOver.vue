@@ -25,6 +25,7 @@ const emit = defineEmits<{
   deleteRequested: []
   checkinRequested: []
   linkCustomer: []
+  flipSide: []
 }>()
 
 // Active booking for this berth
@@ -125,13 +126,20 @@ function formatDateTime(d: string) {
 </script>
 
 <template>
-  <Transition name="slide">
+  <!-- Mobile: bottom sheet die omhoog schuift met max 85vh hoogte
+       Desktop: gewone side panel rechts naast de kaart -->
+  <Transition name="sheet">
     <div
       v-if="open"
-      class="fixed inset-0 z-50 shadow-2xl bg-white flex flex-col border-l border-black/[0.08] lg:static lg:inset-auto lg:z-auto lg:shadow-none lg:w-[420px] lg:shrink-0 lg:h-full"
+      class="fixed bottom-0 left-0 right-0 z-50 shadow-2xl bg-white flex flex-col rounded-t-2xl max-h-[85vh] lg:rounded-none lg:static lg:inset-auto lg:z-auto lg:shadow-none lg:w-[420px] lg:shrink-0 lg:h-full lg:max-h-none lg:border-l lg:border-black/[0.08]"
     >
+      <!-- Drag handle (mobile only) -->
+      <div class="lg:hidden flex justify-center pt-2 pb-1 shrink-0">
+        <span class="w-10 h-1 rounded-full bg-black/15" />
+      </div>
+
       <!-- Header -->
-      <div class="px-5 pt-5 pb-4 border-b border-black/[0.08]">
+      <div class="px-5 pt-2 pb-4 lg:pt-5 border-b border-black/[0.08]">
         <div class="flex items-center justify-between mb-3">
           <h2 class="text-lg font-semibold text-[#0A1520] tracking-tight">{{ berth.code }}</h2>
           <button class="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center" @click="emit('close')">
@@ -249,23 +257,33 @@ function formatDateTime(d: string) {
       </div>
 
       <!-- Footer actions -->
-      <div class="px-5 py-4 border-t border-black/[0.08] flex flex-col gap-2">
-        <div v-if="editMode" class="flex gap-2">
-          <button
-            class="flex-1 py-2 rounded-full text-xs font-semibold transition-all"
-            :class="berth.isPassanten
-              ? 'bg-primary-500/10 text-primary-500 hover:bg-primary-500/20'
-              : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/5'"
-            @click="togglePassanten"
-          >
-            {{ berth.isPassanten ? '✓ Passantenplaats' : 'Markeer als passanten' }}
-          </button>
-          <button
-            class="px-4 py-2 rounded-full bg-red-500/10 text-red-500 text-xs font-semibold hover:bg-red-500/20"
-            @click="emit('deleteRequested')"
-          >
-            Verwijder
-          </button>
+      <div class="px-5 py-4 border-t border-black/[0.08] flex flex-col gap-2" style="padding-bottom: max(env(safe-area-inset-bottom), 16px);">
+        <div v-if="editMode" class="flex flex-col gap-2">
+          <div class="flex gap-2">
+            <button
+              class="flex-1 py-2 rounded-full text-xs font-semibold transition-all"
+              :class="berth.isPassanten
+                ? 'bg-primary-500/10 text-primary-500 hover:bg-primary-500/20'
+                : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/5'"
+              @click="togglePassanten"
+            >
+              {{ berth.isPassanten ? '✓ Passantenplaats' : 'Markeer als passanten' }}
+            </button>
+            <button
+              class="px-3 py-2 rounded-full bg-[#F4F7F8] text-[#5A6A78] text-xs font-semibold hover:bg-black/5 inline-flex items-center gap-1"
+              title="Wissel naar de andere zijde van de steiger"
+              @click="emit('flipSide')"
+            >
+              <UIcon name="i-lucide-flip-horizontal-2" class="size-3.5" />
+              Wissel zijde
+            </button>
+            <button
+              class="px-4 py-2 rounded-full bg-red-500/10 text-red-500 text-xs font-semibold hover:bg-red-500/20"
+              @click="emit('deleteRequested')"
+            >
+              Verwijder
+            </button>
+          </div>
         </div>
         <!-- Check-in / Check-out for active booking -->
         <div v-if="activeBooking" class="flex gap-2">
@@ -309,11 +327,18 @@ function formatDateTime(d: string) {
 </template>
 
 <style scoped>
-.slide-enter-active, .slide-leave-active {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+.sheet-enter-active, .sheet-leave-active {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.slide-enter-from, .slide-leave-to {
-  transform: translateX(100%);
+/* Bottom-sheet (mobile): slide up from below */
+.sheet-enter-from, .sheet-leave-to {
+  transform: translateY(100%);
+}
+/* Side-panel (desktop): slide in from right */
+@media (min-width: 1024px) {
+  .sheet-enter-from, .sheet-leave-to {
+    transform: translateX(100%);
+  }
 }
 .fade-enter-active, .fade-leave-active {
   transition: opacity 0.2s;
