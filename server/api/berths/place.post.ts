@@ -72,7 +72,9 @@ export default defineEventHandler(async (event) => {
   const gpsLng = Number(body.gpsLng)
   const length = Math.max(2, Math.min(60, Number(body.length) || 10))
   const width = Math.max(1, Math.min(20, Number(body.width) || 3.5))
-  const isPassanten = !!body.isPassanten
+  const validTypes = ['JAARPLAATS', 'SEIZOEN', 'WINTERSTALLING', 'PASSANT', 'WERKPLEK'] as const
+  type BerthTypeValue = typeof validTypes[number]
+  const type: BerthTypeValue = (validTypes as readonly string[]).includes(body.type) ? body.type as BerthTypeValue : 'JAARPLAATS'
 
   if (!marinaId || !Number.isFinite(gpsLat) || !Number.isFinite(gpsLng)) {
     throw createError({ statusCode: 400, message: 'marinaId, gpsLat en gpsLng zijn verplicht' })
@@ -128,7 +130,7 @@ export default defineEventHandler(async (event) => {
       code,
       length,
       width,
-      isPassanten,
+      type,
       side,
       gpsLat,
       gpsLng,

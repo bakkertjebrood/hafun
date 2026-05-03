@@ -1,6 +1,9 @@
 import { prisma } from '../../../utils/prisma'
 import { getAuthUser } from '../../../utils/auth'
 
+const ALLOWED_TYPES = ['JAARPLAATS', 'SEIZOEN', 'WINTERSTALLING', 'PASSANT', 'WERKPLEK'] as const
+type AllowedType = typeof ALLOWED_TYPES[number]
+
 export default defineEventHandler(async (event) => {
   const auth = getAuthUser(event)
   if (!auth) throw createError({ statusCode: 401, message: 'Niet ingelogd' })
@@ -8,9 +11,9 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, message: 'id is verplicht' })
 
-  const body = await readBody<{ isPassanten: boolean }>(event)
-  if (typeof body?.isPassanten !== 'boolean') {
-    throw createError({ statusCode: 400, message: 'isPassanten boolean is verplicht' })
+  const body = await readBody<{ type: AllowedType }>(event)
+  if (!body?.type || !ALLOWED_TYPES.includes(body.type)) {
+    throw createError({ statusCode: 400, message: 'type is verplicht (JAARPLAATS, SEIZOEN, WINTERSTALLING, PASSANT of WERKPLEK)' })
   }
 
   const pier = await prisma.pierLine.findUnique({ where: { id } })
@@ -21,7 +24,7 @@ export default defineEventHandler(async (event) => {
 
   const res = await prisma.berth.updateMany({
     where: { marinaId: pier.marinaId, pier: pier.name },
-    data: { isPassanten: body.isPassanten }
+    data: { type: body.type }
   })
 
   return { updated: res.count }

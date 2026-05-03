@@ -49,13 +49,14 @@ async function main() {
     { pier: 'D', count: 25, length: 8, width: 3.2 }
   ]
 
-  const statuses = ['FREE', 'OCCUPIED', 'SEASONAL', 'STORAGE', 'TEMPORARY'] as const
+  const types = ['JAARPLAATS', 'JAARPLAATS', 'JAARPLAATS', 'SEIZOEN', 'WINTERSTALLING', 'PASSANT'] as const
 
   for (const p of piers) {
     for (let i = 1; i <= p.count; i++) {
       const code = `${p.pier}${String(i).padStart(2, '0')}-${p.length}m`
-      const statusIdx = (i * 7 + p.pier.charCodeAt(0)) % 10
-      const status = statusIdx < 2 ? 'FREE' : statusIdx < 5 ? 'OCCUPIED' : statusIdx < 7 ? 'SEASONAL' : statusIdx < 9 ? 'STORAGE' : 'TEMPORARY'
+      const idx = (i * 7 + p.pier.charCodeAt(0)) % types.length
+      const type = types[idx]!
+      const status = (i * 3 + p.pier.charCodeAt(0)) % 4 === 0 ? 'OCCUPIED' : 'FREE'
 
       await prisma.berth.upsert({
         where: { id: `${marina.id}-${code}` },
@@ -67,7 +68,8 @@ async function main() {
           pier: p.pier,
           length: p.length,
           width: p.width,
-          status
+          status,
+          type
         }
       })
     }

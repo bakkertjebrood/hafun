@@ -65,7 +65,8 @@ async function main() {
         data: {
           customerId: customer.id,
           boatId: boat.id,
-          status: c.contractType === 'YEAR' ? 'OCCUPIED' : c.contractType === 'SUMMER' ? 'SEASONAL' : 'TEMPORARY'
+          status: 'OCCUPIED',
+          type: c.contractType === 'YEAR' ? 'JAARPLAATS' : c.contractType === 'SUMMER' ? 'SEIZOEN' : 'PASSANT'
         }
       })
     }

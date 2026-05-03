@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
       length: true,
       width: true,
       status: true,
-      isPassanten: true,
+      type: true,
       gpsLat: true,
       gpsLng: true,
       side: true,
@@ -70,15 +70,21 @@ export default defineEventHandler(async (event) => {
   const enriched = berths.map(b => {
     const booking = activeBookingByBerth[b.id]
     const hasNote = (noteCounts[b.id] || 0) > 0
-    // Afleiden van een "visueel" status voor de kaart
+    // Afleiden van een "visueel" status voor de kaart. De display-status mengt
+    // de echte status (FREE/OCCUPIED/EMPTY/RELOCATED) met het type (voor lege
+    // plekken laten we het type-kleur zien) en met afgeleide states als
+    // PASSANT/SUBLET/MELDING.
     let displayStatus: string = b.status
+    if (b.status === 'FREE') {
+      // Lege plek: kleur op type
+      displayStatus = b.type
+    }
     if (date && booking) {
-      // Vaste plek met booking voor iemand anders dan de vaste klant = SUBLET
-      // (vaste ligger weg, tijdelijk aan een andere boot verhuurd)
-      const sublet = !b.isPassanten
+      // Boeking actief op deze dag
+      const sublet = b.type === 'JAARPLAATS'
         && b.customer?.id != null
         && booking.customerId !== b.customer.id
-      displayStatus = sublet ? 'SUBLET' : (b.isPassanten ? 'PASSANT' : 'OCCUPIED')
+      displayStatus = sublet ? 'SUBLET' : (b.type === 'PASSANT' ? 'PASSANT' : 'OCCUPIED')
     }
     if (hasNote && !date) displayStatus = 'MELDING'
     return {
@@ -92,22 +98,22 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  const counts = {
-    FREE: 0,
-    OCCUPIED: 0,
+  const counts: Record<string, number> = {
+    JAARPLAATS: 0,
+    SEIZOEN: 0,
+    WINTERSTALLING: 0,
     PASSANT: 0,
+    WERKPLEK: 0,
+    OCCUPIED: 0,
     SUBLET: 0,
-    SEASONAL: 0,
-    STORAGE: 0,
-    TEMPORARY: 0,
     EMPTY: 0,
     RELOCATED: 0,
     MELDING: 0
   }
 
   for (const b of enriched) {
-    const key = b.displayStatus as keyof typeof counts
-    if (counts[key] !== undefined) counts[key]++
+    const key = b.displayStatus
+    if (typeof counts[key] === 'number') counts[key] = (counts[key] ?? 0) + 1
   }
 
   return { marina, berths: enriched, counts, date: date?.toISOString() || null }

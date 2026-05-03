@@ -1,12 +1,15 @@
 import { prisma } from '../../utils/prisma'
 import { getAuthUser } from '../../utils/auth'
 
+type BerthTypeValue = 'JAARPLAATS' | 'SEIZOEN' | 'WINTERSTALLING' | 'PASSANT' | 'WERKPLEK'
+const VALID_TYPES: readonly string[] = ['JAARPLAATS', 'SEIZOEN', 'WINTERSTALLING', 'PASSANT', 'WERKPLEK']
+
 interface BulkBody {
   pier: string
   count: number
   length?: number
   width?: number
-  isPassanten?: boolean
+  type?: BerthTypeValue
   codePrefix?: string
   side?: 'LEFT' | 'RIGHT' | 'HEAD'
 }
@@ -35,6 +38,7 @@ export default defineEventHandler(async (event) => {
   const existingCount = await prisma.berth.count({ where: { marinaId, pier: body.pier } })
   const prefix = (body.codePrefix || body.pier).trim()
   const side = body.side === 'LEFT' || body.side === 'RIGHT' || body.side === 'HEAD' ? body.side : null
+  const type: BerthTypeValue = body.type && VALID_TYPES.includes(body.type) ? body.type : 'JAARPLAATS'
 
   const data = Array.from({ length: count }, (_, i) => {
     const seq = existingCount + i + 1
@@ -44,7 +48,7 @@ export default defineEventHandler(async (event) => {
       code: `${prefix}${String(seq).padStart(2, '0')}-${length}m`,
       length,
       width,
-      isPassanten: !!body.isPassanten,
+      type,
       side
     }
   })
