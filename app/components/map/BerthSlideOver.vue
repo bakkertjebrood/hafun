@@ -144,7 +144,7 @@ function formatDateTime(d: string) {
   <Transition name="sheet">
     <div
       v-if="open"
-      class="fixed bottom-0 left-0 right-0 z-50 shadow-2xl bg-white flex flex-col rounded-t-2xl max-h-[85vh] lg:rounded-none lg:static lg:inset-auto lg:z-auto lg:shadow-none lg:w-[420px] lg:shrink-0 lg:h-full lg:max-h-none lg:border-l lg:border-black/[0.08]"
+      class="fixed bottom-0 left-0 right-0 z-[1100] shadow-2xl bg-white flex flex-col rounded-t-2xl max-h-[85vh] lg:rounded-none lg:static lg:inset-auto lg:z-auto lg:shadow-none lg:w-[420px] lg:shrink-0 lg:h-full lg:max-h-none lg:border-l lg:border-black/[0.08]"
     >
       <!-- Drag handle (mobile only) -->
       <div class="lg:hidden flex justify-center pt-2 pb-1 shrink-0">
@@ -357,7 +357,7 @@ function formatDateTime(d: string) {
   <Transition name="fade">
     <div
       v-if="open"
-      class="fixed inset-0 bg-black/20 z-40 lg:hidden"
+      class="fixed inset-0 bg-black/30 z-[1090] lg:hidden"
       @click="emit('close')"
     />
   </Transition>
