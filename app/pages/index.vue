@@ -204,7 +204,37 @@ function closeMenu() { mobileMenuOpen.value = false }
           </p>
         </div>
         <div class="relative">
-          <HeroSelfService class="w-full max-w-lg mx-auto text-primary-500" />
+          <div class="relative rounded-[20px] bg-white shadow-[0_20px_60px_rgba(10,21,32,0.08)] border border-black/[0.05] overflow-hidden">
+            <HarbourMapPreview class="w-full h-auto block" />
+          </div>
+          <div class="hidden lg:block absolute -bottom-10 -left-10 w-44">
+            <PortalPhone class="w-full drop-shadow-[0_10px_24px_rgba(10,21,32,0.12)]" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Product showcase: dashboard -->
+    <section class="bg-[#0A1520] text-white">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 py-16 lg:py-24 grid lg:grid-cols-2 gap-12 items-center">
+        <div>
+          <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-primary-300 text-xs font-semibold tracking-wide">
+            Eén overzicht voor je hele dag
+          </span>
+          <h2 class="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight">
+            Open de app, zie meteen wat er speelt.
+          </h2>
+          <p class="mt-3 text-white/70">
+            Bezetting, openstaande facturen, wachtlijst-groei en wie er vandaag binnen komt — allemaal op één scherm. Geen losse Excels meer, geen gemiste passanten.
+          </p>
+          <ul class="mt-6 space-y-2 text-sm text-white/85">
+            <li class="flex gap-2 items-start"><UIcon name="i-lucide-check" class="size-5 text-primary-300 shrink-0" /><span>Live bezettingspercentage en omzettrend</span></li>
+            <li class="flex gap-2 items-start"><UIcon name="i-lucide-check" class="size-5 text-primary-300 shrink-0" /><span>Aankomstlijst met betaalstatus en QR-bron</span></li>
+            <li class="flex gap-2 items-start"><UIcon name="i-lucide-check" class="size-5 text-primary-300 shrink-0" /><span>Wachtlijst met groei deze week</span></li>
+          </ul>
+        </div>
+        <div class="relative">
+          <DashboardKPIs class="w-full h-auto block rounded-[14px] overflow-hidden shadow-[0_30px_80px_rgba(0,0,0,0.35)]" />
         </div>
       </div>
     </section>
@@ -282,6 +312,52 @@ function closeMenu() { mobileMenuOpen.value = false }
           </p>
         </div>
       </div>
+
+      <!-- Spotlight 1: Facturatie + Moneybird -->
+      <div class="mt-20 grid lg:grid-cols-2 gap-12 items-center">
+        <div class="order-2 lg:order-1">
+          <span class="text-xs font-mono font-semibold text-primary-500 tracking-widest uppercase">Facturatie</span>
+          <h3 class="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight">
+            Facturen die kloppen, zonder dubbel werk.
+          </h3>
+          <p class="mt-3 text-[#2D3E4A]">
+            Lijnen voor jaarplaats, stroomverbruik, werkbonnen — automatisch gevuld vanuit je systeem. Credits voor onderverhuur worden ingehouden, en alles synct met Moneybird voor je boekhouder.
+          </p>
+          <ul class="mt-5 space-y-2 text-sm text-[#2D3E4A]">
+            <li class="flex gap-2 items-start"><UIcon name="i-lucide-check" class="size-5 text-primary-500 shrink-0" /><span>Online betaallink + automatische herinneringen</span></li>
+            <li class="flex gap-2 items-start"><UIcon name="i-lucide-check" class="size-5 text-primary-500 shrink-0" /><span>Deelbetalingen, kassa en POS in één saldo</span></li>
+            <li class="flex gap-2 items-start"><UIcon name="i-lucide-check" class="size-5 text-primary-500 shrink-0" /><span>Live sync met Moneybird (Exact &amp; Visma volgen)</span></li>
+          </ul>
+        </div>
+        <div class="order-1 lg:order-2">
+          <div class="max-w-md mx-auto">
+            <InvoiceMockup class="w-full h-auto block" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Spotlight 2: Huurdersportaal -->
+      <div class="mt-24 grid lg:grid-cols-2 gap-12 items-center">
+        <div>
+          <div class="max-w-xs mx-auto">
+            <PortalPhone class="w-full h-auto block drop-shadow-[0_20px_40px_rgba(10,21,32,0.15)]" />
+          </div>
+        </div>
+        <div>
+          <span class="text-xs font-mono font-semibold text-primary-500 tracking-widest uppercase">Huurdersportaal</span>
+          <h3 class="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight">
+            Minder telefoontjes, meer rust op kantoor.
+          </h3>
+          <p class="mt-3 text-[#2D3E4A]">
+            Je huurders loggen in, zien hun ligplaats, betalen openstaande facturen en melden zelf wanneer hun boot een tijd weg is. Jij ziet die afwezigheid direct op de kaart en kan de plek vrij geven aan een passant.
+          </p>
+          <ul class="mt-5 space-y-2 text-sm text-[#2D3E4A]">
+            <li class="flex gap-2 items-start"><UIcon name="i-lucide-check" class="size-5 text-primary-500 shrink-0" /><span>Vakantie-melding van vaste liggers</span></li>
+            <li class="flex gap-2 items-start"><UIcon name="i-lucide-check" class="size-5 text-primary-500 shrink-0" /><span>Open facturen + iDEAL-betaling</span></li>
+            <li class="flex gap-2 items-start"><UIcon name="i-lucide-check" class="size-5 text-primary-500 shrink-0" /><span>Werkt op telefoon, geen app-store nodig</span></li>
+          </ul>
+        </div>
+      </div>
     </section>
 
     <!-- How it works -->
@@ -300,10 +376,11 @@ function closeMenu() { mobileMenuOpen.value = false }
         </div>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div
-            v-for="s in steps"
+            v-for="(s, i) in steps"
             :key="s.n"
             class="bg-white border border-black/[0.06] rounded-[18px] p-6"
           >
+            <StepIcons :step="(i + 1) as 1 | 2 | 3" class="size-16 text-primary-500 mb-4" />
             <div class="text-xs font-mono font-semibold text-primary-500 mb-2">
               {{ s.n }}
             </div>
