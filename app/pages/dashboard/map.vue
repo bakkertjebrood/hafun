@@ -1950,8 +1950,13 @@ async function deleteFacility(f: any) {
               <div class="w-7 h-7 rounded-full bg-primary-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
                 {{ pierMenuFor.name }}
               </div>
-              <div class="text-sm font-semibold text-[#0A1520] truncate">
-                Steiger {{ pierMenuFor.name }}
+              <div class="min-w-0">
+                <div class="text-sm font-semibold text-[#0A1520] truncate leading-tight">
+                  Steiger {{ pierMenuFor.name }}
+                </div>
+                <div class="text-[10px] text-[#5A6A78] leading-tight">
+                  {{ berthCountByPier[pierMenuFor.name] || 0 }} ligplaatsen
+                </div>
               </div>
             </div>
             <button
@@ -1965,10 +1970,7 @@ async function deleteFacility(f: any) {
             </button>
           </div>
 
-          <div
-            v-if="(berthCountByPier[pierMenuFor.name] || 0) === 0"
-            class="bg-[#F4F7F8] rounded-[10px] p-2.5 mb-2.5"
-          >
+          <div class="bg-[#F4F7F8] rounded-[10px] p-2.5 mb-2.5">
             <div class="text-[10px] uppercase tracking-wide text-[#5A6A78] font-semibold mb-1.5">
               Voeg ligplaatsen toe
             </div>
@@ -1999,7 +2001,7 @@ async function deleteFacility(f: any) {
               :disabled="pierMenuBerthBusy"
               @click="addBerthsFromMenu(pierMenuFor)"
             >
-              {{ pierMenuBerthBusy ? 'Bezig…' : `+ ${pierMenuBerthCount} ligplaatsen` }}
+              {{ pierMenuBerthBusy ? 'Bezig…' : `+ ${pierMenuBerthCount} ligplaatsen toevoegen` }}
             </button>
           </div>
 
