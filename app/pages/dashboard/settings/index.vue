@@ -66,6 +66,28 @@ async function fetchPiers() {
   piers.value = await $fetch('/api/piers', { query: { marinaId: marinaId.value } }) as any[]
 }
 
+async function deletePier(pier: any) {
+  if (!confirm(`Steiger ${pier.name} verwijderen?`)) return
+  try {
+    await $fetch(`/api/piers/${pier.id}`, { method: 'DELETE' })
+    await fetchPiers()
+  } catch (e: any) {
+    if (e?.response?.status === 409 || e?.statusCode === 409) {
+      const msg = e.data?.message || 'Deze steiger heeft ligplaatsen.'
+      if (confirm(`${msg}\n\nOok alle bijbehorende ligplaatsen verwijderen?`)) {
+        try {
+          await $fetch(`/api/piers/${pier.id}`, { method: 'DELETE', query: { cascade: 1 } })
+          await fetchPiers()
+        } catch (err: any) {
+          alert(err.data?.message || 'Fout bij verwijderen')
+        }
+      }
+    } else {
+      alert(e.data?.message || 'Fout bij verwijderen')
+    }
+  }
+}
+
 async function fetchTariffs() {
   tariffs.value = await $fetch('/api/tariffs') as any[]
 }
@@ -575,6 +597,19 @@ function formatDate(d: string) {
           >
             {{ pier.points?.length >= 2 ? 'Getekend' : 'Niet getekend' }}
           </span>
+          <button
+            type="button"
+            class="ml-2 w-8 h-8 rounded-full flex items-center justify-center text-[#5A6A78] hover:bg-red-500/10 hover:text-red-500 transition"
+            :aria-label="`Steiger ${pier.name} verwijderen`"
+            @click="deletePier(pier)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6M14 11v6" />
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+            </svg>
+          </button>
         </div>
         <div
           v-if="!piers.length"
