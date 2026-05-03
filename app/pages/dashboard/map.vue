@@ -24,6 +24,7 @@ const drawHeadPoints = ref<number[][]>([])
 const drawnPiers = ref<any[]>([])
 const pierLayers: any[] = []
 const vertexHandles: any[] = []
+const drawPointMarkers: any[] = []
 let drawPolyline: any = null
 let drawHeadPolyline: any = null
 let drawPreviewLine: any = null
@@ -448,13 +449,14 @@ function onMapClick(e: any) {
   if (drawMode.value === 'main') {
     drawPoints.value.push(point)
     updateDrawPreview()
+    rippleAt(point, '#00A9A5')
   } else if (drawMode.value === 'head') {
+    // T-head is just 2 points (start + end). Replace earlier points so the
+    // user can keep tapping to refine; an explicit "Opslaan" button commits.
+    if (drawHeadPoints.value.length >= 2) drawHeadPoints.value = []
     drawHeadPoints.value.push(point)
     updateDrawPreview()
-    // T-head is just 2 points (start + end)
-    if (drawHeadPoints.value.length >= 2) {
-      finishDrawPier()
-    }
+    rippleAt(point, '#F59E0B')
   }
 }
 
@@ -504,21 +506,66 @@ function updateDrawPreview() {
     }).addTo(mapInstance)
     drawHeadPolyline = L.layerGroup([halo, main]).addTo(mapInstance)
   }
+
+  renderDrawPointMarkers()
+}
+
+function clearDrawPointMarkers() {
+  drawPointMarkers.forEach(m => m.remove())
+  drawPointMarkers.length = 0
+}
+
+function renderDrawPointMarkers() {
+  clearDrawPointMarkers()
+  if (!mapInstance || !L) return
+  drawPoints.value.forEach((pt) => {
+    drawPointMarkers.push(L.circleMarker(pt as any, {
+      radius: 6, color: 'white', weight: 2, fillColor: '#00A9A5', fillOpacity: 1,
+      interactive: false
+    }).addTo(mapInstance))
+  })
+  drawHeadPoints.value.forEach((pt) => {
+    drawPointMarkers.push(L.circleMarker(pt as any, {
+      radius: 6, color: 'white', weight: 2, fillColor: '#F59E0B', fillOpacity: 1,
+      interactive: false
+    }).addTo(mapInstance))
+  })
+}
+
+function rippleAt(point: number[], color: string) {
+  if (!mapInstance || !L) return
+  const icon = L.divIcon({
+    className: 'pier-point-ripple',
+    html: `<div class="ripple" style="--ripple-color:${color}"></div>`,
+    iconSize: [60, 60],
+    iconAnchor: [30, 30]
+  })
+  const marker = L.marker(point as any, { icon, interactive: false, zIndexOffset: 500 }).addTo(mapInstance)
+  setTimeout(() => marker.remove(), 700)
 }
 
 async function finishDrawPier() {
   if (drawPoints.value.length < 2) return
   const pierName = drawPierName.value
 
-  await $fetch('/api/piers', {
-    method: 'POST',
-    body: {
-      marinaId: marinaId.value,
-      name: pierName,
-      points: drawPoints.value,
-      headPoints: drawHeadPoints.value.length >= 2 ? drawHeadPoints.value : null
+  try {
+    await $fetch('/api/piers', {
+      method: 'POST',
+      body: {
+        marinaId: marinaId.value,
+        name: pierName,
+        points: drawPoints.value,
+        headPoints: drawHeadPoints.value.length >= 2 ? drawHeadPoints.value : null
+      }
+    })
+  } catch (err: any) {
+    console.error('Pier opslaan mislukt:', err)
+    if (typeof window !== 'undefined') {
+      const msg = err?.data?.message || err?.message || 'Onbekende fout'
+      window.alert(`Steiger opslaan mislukt: ${msg}`)
     }
-  })
+    return
+  }
 
   cancelDraw()
   await loadPiers()
@@ -568,6 +615,7 @@ function cancelDraw() {
   if (drawPolyline) { drawPolyline.remove(); drawPolyline = null }
   if (drawHeadPolyline) { drawHeadPolyline.remove(); drawHeadPolyline = null }
   if (drawPreviewLine) { drawPreviewLine.remove(); drawPreviewLine = null }
+  clearDrawPointMarkers()
   mapInstance?.getContainer()?.style.setProperty('cursor', '')
   mapInstance?.doubleClickZoom.enable()
   renderVertexHandles()
@@ -2053,11 +2101,19 @@ function rejectSuggestion(idx: number) {
           Afronden
         </button>
         <button
-          v-if="drawMode === 'head'"
+          v-if="drawMode === 'head' && drawHeadPoints.length >= 2"
           class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white text-primary-600 hover:bg-white/90"
+          title="Steiger met T-kop opslaan"
+          @click="finishDrawPier"
+        >
+          Opslaan met T-kop
+        </button>
+        <button
+          v-if="drawMode === 'head'"
+          class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/15 hover:bg-white/25"
           @click="skipHead"
         >
-          Geen T-kop, opslaan
+          Geen T-kop
         </button>
         <button
           class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/15 hover:bg-white/25"
@@ -2868,9 +2924,23 @@ function rejectSuggestion(idx: number) {
 </template>
 
 <style>
-.berth-marker-wrapper, .pier-label, .facility-marker-wrapper, .pier-vertex, .pier-endpoint {
+.berth-marker-wrapper, .pier-label, .facility-marker-wrapper, .pier-vertex, .pier-endpoint, .pier-point-ripple {
   background: none !important;
   border: none !important;
+}
+.pier-point-ripple .ripple {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 2px solid var(--ripple-color, #00A9A5);
+  background: color-mix(in srgb, var(--ripple-color, #00A9A5) 25%, transparent);
+  animation: pier-ripple 0.7s ease-out forwards;
+  pointer-events: none;
+  transform-origin: center;
+}
+@keyframes pier-ripple {
+  0%   { transform: scale(0.15); opacity: 1; }
+  100% { transform: scale(1);    opacity: 0; }
 }
 @keyframes pulse {
   0%, 100% { opacity: 1; }
