@@ -1,4 +1,4 @@
-const PUBLIC_ROUTES = new Set<string>(['/', '/login', '/register'])
+const PUBLIC_ROUTES = new Set<string>(['/', '/login', '/register', '/privacy', '/voorwaarden'])
 const SETUP_ROUTE = '/onboarding'
 
 export default defineNuxtRouteMiddleware(async (to) => {

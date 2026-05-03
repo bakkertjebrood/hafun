@@ -1,64 +1,74 @@
-# Nuxt Starter Template
+# Nautar
 
-[![Nuxt UI](https://img.shields.io/badge/Made%20with-Nuxt%20UI-00DC82?logo=nuxt&labelColor=020420)](https://ui.nuxt.com)
+Marina management — op stroom. SaaS voor jachthavenbeheer (ligplaatsen,
+huurders, reserveringen, facturatie, kassa, werkbonnen).
 
-Use this template to get started with [Nuxt UI](https://ui.nuxt.com) quickly.
-
-- [Live demo](https://starter-template.nuxt.dev/)
-- [Documentation](https://ui.nuxt.com/docs/getting-started/installation/nuxt)
-
-<a href="https://starter-template.nuxt.dev/" target="_blank">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://ui.nuxt.com/assets/templates/nuxt/starter-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="https://ui.nuxt.com/assets/templates/nuxt/starter-light.png">
-    <img alt="Nuxt Starter Template" src="https://ui.nuxt.com/assets/templates/nuxt/starter-light.png" width="830" height="466">
-  </picture>
-</a>
-
-> The starter template for Vue is on https://github.com/nuxt-ui-templates/starter-vue.
+Built with **Nuxt 4**, **Nuxt UI v4**, **Prisma + PostgreSQL** and deployed on
+**Heroku**.
 
 ## Quick Start
 
-```bash [Terminal]
-npm create nuxt@latest -- -t ui
-```
-
-## Deploy your own
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-name=starter&repository-url=https%3A%2F%2Fgithub.com%2Fnuxt-ui-templates%2Fstarter&demo-image=https%3A%2F%2Fui.nuxt.com%2Fassets%2Ftemplates%2Fnuxt%2Fstarter-dark.png&demo-url=https%3A%2F%2Fstarter-template.nuxt.dev%2F&demo-title=Nuxt%20Starter%20Template&demo-description=A%20minimal%20template%20to%20get%20started%20with%20Nuxt%20UI.)
-
-## Setup
-
-Make sure to install the dependencies:
-
 ```bash
-pnpm install
+npm install
+cp .env.example .env       # fill in DATABASE_URL, JWT_SECRET, ...
+npm run db:setup           # push schema + seed demo data
+npm run dev
 ```
 
-## Development Server
+App draait op http://localhost:3000.
 
-Start the development server on `http://localhost:3000`:
+## Production setup (Heroku)
 
-```bash
-pnpm dev
-```
+Vereiste environment variables (`heroku config:set ...`):
 
-## Production
+| Variable | Beschrijving |
+|---|---|
+| `DATABASE_URL` | Postgres connection string (Heroku Postgres add-on) |
+| `JWT_SECRET` | Lang random string (>= 64 chars) — sessie token signing |
+| `APP_URL` | `https://<app>.herokuapp.com` of custom domain |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `POSTMARK_API_KEY` | Postmark Server token (transactionele mail) |
+| `EMAIL_FROM` | Geverifieerd Postmark sender adres |
+| `CLAUDE_API_KEY` | (Optioneel) Anthropic API key voor AI ligplaats-detectie |
 
-Build the application for production:
+### Google OAuth
 
-```bash
-pnpm build
-```
+1. Maak een OAuth 2.0 Client aan in
+   [Google Cloud Console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials).
+2. Application type: **Web application**.
+3. Authorized JavaScript origins: `https://<app>.herokuapp.com`.
+4. Authorized redirect URIs: `https://<app>.herokuapp.com/api/auth/google/callback`.
+5. Voeg op het OAuth consent screen verwijzingen toe naar `/privacy` en `/voorwaarden`.
 
-Locally preview production build:
+### Postmark
 
-```bash
-pnpm preview
-```
+`POSTMARK_API_KEY` is de Postmark *Server token* (niet de account token).
+Verifieer het sender domain en zet `EMAIL_FROM` op een adres binnen dat domein.
 
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+### Database migraties
 
-## Renovate integration
+Het `Procfile` voert bij elke release `prisma db push` uit. Voor productie kun
+je in plaats daarvan `prisma migrate deploy` gebruiken zodra je migraties checkt
+in.
 
-Install [Renovate GitHub app](https://github.com/apps/renovate/installations/select_target) on your repository and you are good to go.
+## Scripts
+
+| Script | Beschrijving |
+|---|---|
+| `npm run dev` | Dev server met HMR |
+| `npm run build` | Productie build (`prisma generate && nuxt build`) |
+| `npm run start` | Run productie build |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | Vue / TypeScript check |
+| `npm run db:push` | Sync Prisma schema naar DB |
+| `npm run db:studio` | Prisma Studio |
+
+## Routes
+
+- `/` — landing page
+- `/login`, `/register` — auth (e-mail of Google)
+- `/privacy`, `/voorwaarden` — juridische pagina's
+- `/dashboard/*` — havenmeester app
+- `/portal` — huurdersportaal
+- `/api/auth/google/{start,callback}` — Google OAuth flow
