@@ -47,6 +47,8 @@ const pierMenuFor = ref<any | null>(null)
 const pierMenuPos = ref<{ x: number, y: number } | null>(null)
 const pierMenuBerthCount = ref(4)
 const pierMenuBerthLength = ref(10)
+const pierMenuBerthSide = ref<'LEFT' | 'RIGHT' | 'HEAD'>('LEFT')
+const pierMenuBerthPassanten = ref(false)
 const pierMenuBerthBusy = ref(false)
 
 // Facility catalog: type → label, emoji marker glyph, brand color
@@ -94,6 +96,30 @@ function pierBearing(pier: any): number {
   if (!pts || pts.length < 2) return 0
   return bearingOf(pts[0]!, pts[pts.length - 1]!)
 }
+
+// Compute screen-relative side labels ("Boven"/"Onder" when the pier is roughly
+// horizontal, "Links"/"Rechts" when vertical) so the picker always matches what
+// the user sees, regardless of draw direction.
+function sideLabelsFor(pier: any): { topLabel: string, topValue: 'LEFT' | 'RIGHT', bottomLabel: string, bottomValue: 'LEFT' | 'RIGHT' } {
+  const beta = pierBearing(pier)
+  const leftPerp = (beta - 90 + 360) % 360
+  const isHoriz = (beta > 30 && beta < 150) || (beta > 210 && beta < 330)
+  if (isHoriz) {
+    const leftIsTop = leftPerp < 90 || leftPerp > 270
+    return leftIsTop
+      ? { topLabel: 'Boven', topValue: 'LEFT', bottomLabel: 'Onder', bottomValue: 'RIGHT' }
+      : { topLabel: 'Boven', topValue: 'RIGHT', bottomLabel: 'Onder', bottomValue: 'LEFT' }
+  }
+  const leftIsLeft = leftPerp > 180 && leftPerp < 360
+  return leftIsLeft
+    ? { topLabel: 'Links', topValue: 'LEFT', bottomLabel: 'Rechts', bottomValue: 'RIGHT' }
+    : { topLabel: 'Links', topValue: 'RIGHT', bottomLabel: 'Rechts', bottomValue: 'LEFT' }
+}
+
+const pierMenuSideLabels = computed(() => {
+  if (!pierMenuFor.value) return { topLabel: 'Zijde 1', topValue: 'LEFT' as const, bottomLabel: 'Zijde 2', bottomValue: 'RIGHT' as const }
+  return sideLabelsFor(pierMenuFor.value)
+})
 
 onMounted(async () => {
   const leaflet = await import('leaflet')
@@ -261,6 +287,10 @@ function renderPierLines() {
     const onPick = (e: any) => {
       if (!editMode.value || drawMode.value !== 'off' || placingFacilityType.value) return
       const px = mapInstance.latLngToContainerPoint(e.latlng)
+      pierMenuBerthCount.value = 4
+      pierMenuBerthLength.value = 10
+      pierMenuBerthSide.value = sideLabelsFor(pier).topValue
+      pierMenuBerthPassanten.value = false
       pierMenuFor.value = pier
       pierMenuPos.value = { x: px.x, y: px.y }
       L.DomEvent.stopPropagation(e)
@@ -587,6 +617,8 @@ async function finishDrawPier() {
       const px = mapInstance.latLngToContainerPoint(L.latLng(m[0], m[1]))
       pierMenuBerthCount.value = 4
       pierMenuBerthLength.value = 10
+      pierMenuBerthSide.value = sideLabelsFor(justDrawn).topValue
+      pierMenuBerthPassanten.value = false
       pierMenuFor.value = justDrawn
       pierMenuPos.value = { x: px.x, y: px.y }
     }
@@ -1059,23 +1091,30 @@ async function addBerthsFromMenu(pier: any) {
   if (!marinaId.value || !pier?.name) return
   const count = Math.max(1, Math.min(200, Math.floor(pierMenuBerthCount.value)))
   const length = Math.max(2, Math.min(60, pierMenuBerthLength.value))
+  const side = pierMenuBerthSide.value
+  const isPassanten = pierMenuBerthPassanten.value
   pierMenuBerthBusy.value = true
   try {
-    // Spread evenly across LEFT and RIGHT so position-berths places them on both sides.
-    const left = Math.ceil(count / 2)
-    const right = count - left
-    if (left > 0) {
-      await $fetch('/api/berths/bulk', {
-        method: 'POST',
-        body: { marinaId: marinaId.value, pier: pier.name, count: left, length, width: 3.5, side: 'LEFT' }
-      })
+    const body: {
+      marinaId: string
+      pier: string
+      count: number
+      length: number
+      width: number
+      side: 'LEFT' | 'RIGHT' | 'HEAD'
+      isPassanten: boolean
+      codePrefix?: string
+    } = {
+      marinaId: marinaId.value,
+      pier: pier.name,
+      count,
+      length,
+      width: 3.5,
+      side,
+      isPassanten
     }
-    if (right > 0) {
-      await $fetch('/api/berths/bulk', {
-        method: 'POST',
-        body: { marinaId: marinaId.value, pier: pier.name, count: right, length, width: 3.5, side: 'RIGHT' }
-      })
-    }
+    if (side === 'HEAD') body.codePrefix = `${pier.name}-KOP`
+    await $fetch('/api/berths/bulk', { method: 'POST', body })
     await $fetch('/api/piers/position-berths', {
       method: 'POST',
       body: { marinaId: marinaId.value, pierNames: [pier.name], onlyUnpositioned: true }
@@ -1083,7 +1122,8 @@ async function addBerthsFromMenu(pier: any) {
     await refreshMapData()
     clearMarkers()
     addBerthMarkers()
-    closePierMenu()
+    // Stay open so the user can quickly add another batch on a different side.
+    pierMenuBerthCount.value = 4
   } catch (e: any) {
     alert(e?.data?.message || 'Toevoegen mislukt')
   } finally {
@@ -1974,6 +2014,31 @@ async function deleteFacility(f: any) {
             <div class="text-[10px] uppercase tracking-wide text-[#5A6A78] font-semibold mb-1.5">
               Voeg ligplaatsen toe
             </div>
+
+            <div class="grid grid-cols-3 gap-1 mb-1.5 p-0.5 bg-white rounded-full border border-black/[0.08]">
+              <button
+                class="py-1 rounded-full text-[11px] font-semibold transition-colors"
+                :class="pierMenuBerthSide === pierMenuSideLabels.topValue ? 'bg-primary-500 text-white' : 'text-[#5A6A78] hover:bg-black/5'"
+                @click="pierMenuBerthSide = pierMenuSideLabels.topValue"
+              >
+                {{ pierMenuSideLabels.topLabel }}
+              </button>
+              <button
+                class="py-1 rounded-full text-[11px] font-semibold transition-colors"
+                :class="pierMenuBerthSide === pierMenuSideLabels.bottomValue ? 'bg-primary-500 text-white' : 'text-[#5A6A78] hover:bg-black/5'"
+                @click="pierMenuBerthSide = pierMenuSideLabels.bottomValue"
+              >
+                {{ pierMenuSideLabels.bottomLabel }}
+              </button>
+              <button
+                class="py-1 rounded-full text-[11px] font-semibold transition-colors"
+                :class="pierMenuBerthSide === 'HEAD' ? 'bg-primary-500 text-white' : 'text-[#5A6A78] hover:bg-black/5'"
+                @click="pierMenuBerthSide = 'HEAD'; pierMenuBerthPassanten = true"
+              >
+                Kop
+              </button>
+            </div>
+
             <div class="flex items-center gap-2 mb-1.5">
               <label class="flex items-center gap-1 text-[11px] text-[#5A6A78]">
                 Aantal
@@ -1986,7 +2051,7 @@ async function deleteFacility(f: any) {
                 >
               </label>
               <label class="flex items-center gap-1 text-[11px] text-[#5A6A78]">
-                Lengte
+                Max
                 <input
                   v-model.number="pierMenuBerthLength"
                   type="number"
@@ -1996,6 +2061,16 @@ async function deleteFacility(f: any) {
                 ><span class="text-[11px] text-[#5A6A78]">m</span>
               </label>
             </div>
+
+            <label class="flex items-center gap-1.5 mb-1.5 text-[11px] text-[#5A6A78] cursor-pointer">
+              <input
+                v-model="pierMenuBerthPassanten"
+                type="checkbox"
+                class="accent-primary-500"
+              >
+              Passantenplekken
+            </label>
+
             <button
               class="w-full py-1.5 rounded-full bg-primary-500 text-white text-[12px] font-semibold disabled:opacity-50"
               :disabled="pierMenuBerthBusy"
