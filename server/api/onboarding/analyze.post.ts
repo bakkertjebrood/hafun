@@ -48,23 +48,29 @@ BEELD:
 - Coördinatensysteem: x = 0 links, x = ${imageWidth} rechts; y = 0 boven, y = ${imageHeight} onder
 ${polygonHint}
 
-OPDRACHT:
-Identificeer ALLE steigers (drijvende of vaste pontons waar boten aan liggen). Voor elke steiger:
+OPDRACHT — wees CONSERVATIEF:
+Geef alleen steigers die je écht duidelijk ziet. **Liever 3 zekere steigers dan 10 gegokte.**
+Het is beter om er één te missen dan een fantasie-steiger toe te voegen.
 
-1. Geef een letter-naam (A, B, C, ...) — begin bij de oostelijkste/rechtse steiger.
-2. Geef de PIXELCOÖRDINATEN van het beginpunt (waterzijde, vaak diepere kant) en eindpunt (walzijde) van de hoofdlijn van de steiger.
-3. Tel ligplaatsen aan elke kant van de hoofdlijn (links en rechts t.o.v. de start→eind richting). Tel boten + lege plekken.
-4. Bepaal of er een T-kop is (dwarssteiger aan het uiteinde). Zo ja, geef de twee pixelcoördinaten van de kop-lijn en het aantal kop-ligplaatsen.
-5. Schat gemiddelde ligplaats-lengte en -breedte in METERS (typisch 8-15m lang, 3-4m breed voor Nederlandse havens).
-6. Geef een confidence-score 0..1 voor deze steiger (hoe zeker ben je van naam, positie, en aantal).
+Een steiger:
+- is een lange smalle drijvende of vaste ponton in het water
+- heeft duidelijk zichtbare ligplaatsen (boten of lege vingerpiers) langs één of beide zijden
+- staat los van de oever (NIET een kade, dijk, looppad of weg langs het water)
 
-REGELS:
-- Output ALLEEN geldige JSON, geen uitleg eromheen.
-- Pixelcoördinaten als gehele getallen binnen [0, ${imageWidth}] resp. [0, ${imageHeight}].
-- Als je twijfelt over een steiger, lager confidence-getal — niet weglaten.
-- Negeer schepen op open water; alleen steigers met ligplaatsen.
+Voor elke ZEKER herkende steiger:
+1. Letternaam A, B, C... (oostelijkste = A)
+2. Pixelcoördinaten van begin- en eindpunt van de hoofdlijn (binnen [0, ${imageWidth}] en [0, ${imageHeight}])
+3. Aantal ligplaatsen LINKS en RECHTS van de hoofdlijn (boten + lege plekken)
+4. T-kop ja/nee. Alleen "ja" als je écht een dwarssteiger ziet.
+5. Gemiddelde ligplaats-lengte en -breedte in meters
+6. Confidence 0..1: alleen >= 0.65 wordt overgenomen. Alles daaronder wordt verworpen.
 
-JSON-FORMAAT:
+VERBODEN:
+- Kades, dijken, parkeerplaatsen, looppaden, gebouwen of stenen oevers als steiger benoemen.
+- Steigers verzinnen die er niet zijn.
+- Meer dan 26 steigers retourneren (alfabet stopt bij Z).
+
+Antwoord ALLEEN geldige JSON:
 {
   "marinaName": "string",
   "piers": [
@@ -83,7 +89,7 @@ JSON-FORMAAT:
       "confidence": 0.85
     }
   ],
-  "notes": "korte opmerking over het resultaat"
+  "notes": "korte opmerking"
 }`
 
   const client = new Anthropic({ apiKey: config.claudeApiKey })

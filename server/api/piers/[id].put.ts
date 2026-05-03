@@ -30,6 +30,23 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'geen wijzigingen opgegeven' })
   }
 
+  // If renaming, propagate the new pier name to all related berths
+  // so the string-based reference doesn't become orphaned.
+  if (typeof data.name === 'string') {
+    const before = await prisma.pierLine.findUnique({ where: { id } })
+    if (before && before.name !== data.name) {
+      const newName = data.name as string
+      const [pier] = await prisma.$transaction([
+        prisma.pierLine.update({ where: { id }, data }),
+        prisma.berth.updateMany({
+          where: { marinaId: before.marinaId, pier: before.name },
+          data: { pier: newName }
+        })
+      ])
+      return pier
+    }
+  }
+
   const pier = await prisma.pierLine.update({
     where: { id },
     data

@@ -95,7 +95,7 @@ export interface ConvertedPier {
   lengthMeters: number
 }
 
-const MIN_CONFIDENCE = 0.4
+const MIN_CONFIDENCE = 0.65
 const MIN_PIER_LENGTH_M = 5
 const MAX_PIER_LENGTH_M = 500
 const SNAP_DISTANCE_M = 5

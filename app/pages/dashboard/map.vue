@@ -41,8 +41,13 @@ const statusLabels: Record<string, string> = {
 
 // Datumfilter — bekijk de bezetting op een andere dag
 const viewDate = ref('')
-const showLegend = ref(true)
+const showLegend = ref(false)
 const setupCtaDismissed = ref(false)
+const pierMenuFor = ref<any | null>(null)
+const pierMenuPos = ref<{ x: number, y: number } | null>(null)
+const pierMenuBerthCount = ref(4)
+const pierMenuBerthLength = ref(10)
+const pierMenuBerthBusy = ref(false)
 const hasSetupCta = computed(() => !setupCtaDismissed.value && !showAiResult.value && drawnPiers.value.length === 0)
 
 // Facility catalog: type → label, emoji marker glyph, brand color
@@ -217,6 +222,13 @@ async function loadPiers() {
   renderPierLines()
 }
 
+function midOf(points: number[][]): [number, number] {
+  if (!points.length) return [0, 0]
+  const a = points[0]!
+  const b = points[points.length - 1]!
+  return [(a[0]! + b[0]!) / 2, (a[1]! + b[1]!) / 2]
+}
+
 function renderPierLines() {
   pierLayers.forEach(l => l.remove())
   pierLayers.length = 0
@@ -226,40 +238,69 @@ function renderPierLines() {
     const points = (pier.points as number[][] | null) ?? []
     if (points.length < 2) continue
 
+    // Subtle dark "halo" beneath the colored line for visibility on busy satellite imagery.
+    const halo = L.polyline(points, {
+      color: '#0A1520', weight: 8, opacity: 0.35, lineCap: 'round', lineJoin: 'round'
+    }).addTo(mapInstance)
     const line = L.polyline(points, {
-      color: '#00A9A5', weight: 4, opacity: 0.8, dashArray: '8, 6'
+      color: '#00A9A5', weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round'
     }).addTo(mapInstance)
 
+    const labelMid = midOf(points)
     const labelIcon = L.divIcon({
       className: 'pier-label',
       html: `<div style="
-        background: #00A9A5; color: white; font-size: 11px; font-weight: 700;
-        padding: 2px 8px; border-radius: 999px; white-space: nowrap;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-      ">Steiger ${pier.name}</div>`,
-      iconAnchor: [-8, 12]
+        background: #00A9A5; color: white;
+        font-size: 13px; font-weight: 800; letter-spacing: 0.5px;
+        width: 28px; height: 28px; line-height: 24px;
+        border: 2px solid white; border-radius: 50%;
+        text-align: center;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+      ">${pier.name}</div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
     })
-    const label = L.marker(points[0], { icon: labelIcon, interactive: false }).addTo(mapInstance)
+    const label = L.marker(labelMid, { icon: labelIcon, interactive: false }).addTo(mapInstance)
 
-    pierLayers.push(line, label)
+    // Click on any segment → open the pier action menu
+    const onPick = (e: any) => {
+      if (!editMode.value || drawMode.value !== 'off' || placingFacilityType.value) return
+      const px = mapInstance.latLngToContainerPoint(e.latlng)
+      pierMenuFor.value = pier
+      pierMenuPos.value = { x: px.x, y: px.y }
+      L.DomEvent.stopPropagation(e)
+    }
+    halo.on('click', onPick)
+    line.on('click', onPick)
+
+    pierLayers.push(halo, line, label)
 
     const headPoints = pier.headPoints as number[][] | null
     if (headPoints && headPoints.length >= 2) {
-      const headLine = L.polyline(headPoints, {
-        color: '#F59E0B', weight: 4, opacity: 0.8, dashArray: '8, 6'
+      const headHalo = L.polyline(headPoints, {
+        color: '#0A1520', weight: 7, opacity: 0.35, lineCap: 'round', lineJoin: 'round'
       }).addTo(mapInstance)
+      const headLine = L.polyline(headPoints, {
+        color: '#F59E0B', weight: 4, opacity: 0.95, lineCap: 'round', lineJoin: 'round'
+      }).addTo(mapInstance)
+      headHalo.on('click', onPick)
+      headLine.on('click', onPick)
 
+      const headMid = midOf(headPoints)
       const headLabel = L.divIcon({
         className: 'pier-label',
         html: `<div style="
-          background: #F59E0B; color: white; font-size: 10px; font-weight: 700;
-          padding: 2px 6px; border-radius: 999px; white-space: nowrap;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+          background: #F59E0B; color: white;
+          font-size: 10px; font-weight: 700;
+          padding: 2px 6px; border-radius: 999px;
+          border: 2px solid white;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+          white-space: nowrap;
         ">${pier.name}-KOP</div>`,
-        iconAnchor: [-8, 12]
+        iconAnchor: [0, 8]
       })
-      const hl = L.marker(headPoints[0], { icon: headLabel, interactive: false }).addTo(mapInstance)
-      pierLayers.push(headLine, hl)
+      const hl = L.marker(headMid, { icon: headLabel, interactive: false }).addTo(mapInstance)
+      pierLayers.push(headHalo, headLine, hl)
     }
   }
 
@@ -373,7 +414,23 @@ function startDrawPier(name: string) {
   clearVertexHandles()
 }
 
+function nextFreePierName(): string {
+  const used = new Set(drawnPiers.value.map((p: any) => p.name as string))
+  for (let i = 0; i < 26; i++) {
+    const n = String.fromCharCode(65 + i)
+    if (!used.has(n)) return n
+  }
+  return `S${drawnPiers.value.length + 1}`
+}
+
+function quickStartDrawPier() {
+  closePierMenu()
+  startDrawPier(nextFreePierName())
+}
+
 function onMapClick(e: any) {
+  // Always dismiss any open pier action menu when tapping somewhere else.
+  if (pierMenuFor.value) closePierMenu()
   if (aiTapMode.value) {
     addAiTapPoint([e.latlng.lat, e.latlng.lng])
     return
@@ -424,23 +481,28 @@ function undoLastPoint() {
 }
 
 function updateDrawPreview() {
-  // Main line preview
+  // Main line preview — match rendered pier styling (dark halo + solid teal)
   if (drawPolyline) drawPolyline.remove()
   if (drawPoints.value.length >= 2) {
-    drawPolyline = L.polyline(drawPoints.value, {
-      color: '#00A9A5', weight: 5, opacity: 0.9
+    const halo = L.polyline(drawPoints.value, {
+      color: '#0A1520', weight: 8, opacity: 0.35, lineCap: 'round', lineJoin: 'round'
     }).addTo(mapInstance)
+    const main = L.polyline(drawPoints.value, {
+      color: '#00A9A5', weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round'
+    }).addTo(mapInstance)
+    drawPolyline = L.layerGroup([halo, main]).addTo(mapInstance)
   }
 
   // Head line preview
   if (drawHeadPolyline) drawHeadPolyline.remove()
-  if (drawHeadPoints.value.length >= 1) {
-    const pts = drawHeadPoints.value.length >= 2 ? drawHeadPoints.value : [...drawHeadPoints.value]
-    if (pts.length >= 2) {
-      drawHeadPolyline = L.polyline(pts, {
-        color: '#F59E0B', weight: 5, opacity: 0.9
-      }).addTo(mapInstance)
-    }
+  if (drawHeadPoints.value.length >= 2) {
+    const halo = L.polyline(drawHeadPoints.value, {
+      color: '#0A1520', weight: 7, opacity: 0.35, lineCap: 'round', lineJoin: 'round'
+    }).addTo(mapInstance)
+    const main = L.polyline(drawHeadPoints.value, {
+      color: '#F59E0B', weight: 4, opacity: 0.95, lineCap: 'round', lineJoin: 'round'
+    }).addTo(mapInstance)
+    drawHeadPolyline = L.layerGroup([halo, main]).addTo(mapInstance)
   }
 }
 
@@ -476,6 +538,21 @@ async function finishDrawPier() {
     addBerthMarkers()
   } catch (err) {
     console.error('Auto-position after draw failed:', err)
+  }
+
+  // Pop the pier action menu open near the freshly-drawn pier so the user
+  // can immediately add ligplaatsen + assign a function. No sidebar trip needed.
+  const justDrawn = drawnPiers.value.find((p: any) => p.name === pierName)
+  if (justDrawn && mapInstance) {
+    const points = (justDrawn.points as number[][] | null) ?? []
+    if (points.length >= 2) {
+      const m = midOf(points)
+      const px = mapInstance.latLngToContainerPoint(L.latLng(m[0], m[1]))
+      pierMenuBerthCount.value = 4
+      pierMenuBerthLength.value = 10
+      pierMenuFor.value = justDrawn
+      pierMenuPos.value = { x: px.x, y: px.y }
+    }
   }
 }
 
@@ -1164,6 +1241,7 @@ function toggleEditMode() {
   if (!editMode.value) {
     cancelDraw()
     cancelPlacingFacility()
+    closePierMenu()
   }
   addBerthMarkers()
   renderVertexHandles()
@@ -1396,6 +1474,93 @@ async function togglePierPassanten(pier: any) {
     await refreshMapData()
   } catch (e: any) {
     alert(e?.data?.message || 'Passanten wijzigen mislukt')
+  }
+}
+
+function closePierMenu() {
+  pierMenuFor.value = null
+  pierMenuPos.value = null
+}
+
+async function addBerthsFromMenu(pier: any) {
+  if (!marinaId.value || !pier?.name) return
+  const count = Math.max(1, Math.min(200, Math.floor(pierMenuBerthCount.value)))
+  const length = Math.max(2, Math.min(60, pierMenuBerthLength.value))
+  pierMenuBerthBusy.value = true
+  try {
+    // Spread evenly across LEFT and RIGHT so position-berths places them on both sides.
+    const left = Math.ceil(count / 2)
+    const right = count - left
+    if (left > 0) {
+      await $fetch('/api/berths/bulk', {
+        method: 'POST',
+        body: { marinaId: marinaId.value, pier: pier.name, count: left, length, width: 3.5, side: 'LEFT' }
+      })
+    }
+    if (right > 0) {
+      await $fetch('/api/berths/bulk', {
+        method: 'POST',
+        body: { marinaId: marinaId.value, pier: pier.name, count: right, length, width: 3.5, side: 'RIGHT' }
+      })
+    }
+    await $fetch('/api/piers/position-berths', {
+      method: 'POST',
+      body: { marinaId: marinaId.value, pierNames: [pier.name], onlyUnpositioned: true }
+    })
+    await refreshMapData()
+    clearMarkers()
+    addBerthMarkers()
+    closePierMenu()
+  } catch (e: any) {
+    alert(e?.data?.message || 'Toevoegen mislukt')
+  } finally {
+    pierMenuBerthBusy.value = false
+  }
+}
+
+async function assignPierFunction(pier: any, kind: 'PASSANTEN' | 'JAARPLAATS' | 'STALLING' | 'SEIZOEN') {
+  const body: { pierName: string, isPassanten?: boolean, status?: string } = { pierName: pier.name }
+  if (kind === 'PASSANTEN') {
+    body.isPassanten = true
+    body.status = 'FREE'
+  } else if (kind === 'JAARPLAATS') {
+    body.isPassanten = false
+    body.status = 'FREE'
+  } else if (kind === 'STALLING') {
+    body.isPassanten = false
+    body.status = 'STORAGE'
+  } else if (kind === 'SEIZOEN') {
+    body.isPassanten = false
+    body.status = 'SEASONAL'
+  }
+  try {
+    await $fetch('/api/piers/assign-function', { method: 'POST', body })
+    await refreshMapData()
+    clearMarkers()
+    addBerthMarkers()
+    closePierMenu()
+  } catch (e: any) {
+    alert(e?.data?.message || 'Functie toewijzen mislukt')
+  }
+}
+
+async function renamePierFromMenu(pier: any) {
+  const next = prompt(`Nieuwe naam voor steiger ${pier.name}:`, pier.name)
+  if (!next || next.trim() === pier.name) return
+  const trimmed = next.trim().toUpperCase()
+  if (drawnPiers.value.some((p: any) => p.id !== pier.id && p.name === trimmed)) {
+    alert(`Naam "${trimmed}" is al in gebruik`)
+    return
+  }
+  try {
+    await $fetch(`/api/piers/${pier.id}`, { method: 'PUT', body: { name: trimmed } })
+    await loadPiers()
+    await refreshMapData()
+    clearMarkers()
+    addBerthMarkers()
+    closePierMenu()
+  } catch (e: any) {
+    alert(e?.data?.message || 'Hernoemen mislukt')
   }
 }
 
@@ -2392,6 +2557,139 @@ function rejectSuggestion(idx: number) {
           @scan="runAiAnalysis"
           @dismiss="setupCtaDismissed = true"
         />
+
+        <!-- Edit mode floating "+ Steiger" button -->
+        <button
+          v-if="editMode && drawMode === 'off' && !pierMenuFor && !aiTapMode && !showAiResult && !placingFacilityType"
+          class="absolute z-[1050] bottom-4 left-4 lg:left-6 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-primary-500 text-white text-sm font-semibold shadow-xl hover:bg-primary-600"
+          @click="quickStartDrawPier"
+        >
+          <UIcon
+            name="i-lucide-plus"
+            class="size-4"
+          />
+          Nieuwe steiger
+        </button>
+
+        <!-- Pier action menu (tap a pier in edit mode) -->
+        <div
+          v-if="pierMenuFor && pierMenuPos"
+          class="absolute z-[1100] bg-white rounded-[14px] shadow-2xl border border-black/[0.08] p-3 w-[260px]"
+          :style="{
+            left: Math.min(Math.max(pierMenuPos.x - 130, 8), (mapInstance?.getContainer()?.offsetWidth ?? 0) - 268) + 'px',
+            top: Math.min(pierMenuPos.y + 16, (mapInstance?.getContainer()?.offsetHeight ?? 0) - 290) + 'px'
+          }"
+          @click.stop
+        >
+          <div class="flex items-center justify-between mb-2.5">
+            <div class="inline-flex items-center gap-2 min-w-0">
+              <div class="w-7 h-7 rounded-full bg-primary-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                {{ pierMenuFor.name }}
+              </div>
+              <div class="text-sm font-semibold text-[#0A1520] truncate">
+                Steiger {{ pierMenuFor.name }}
+              </div>
+            </div>
+            <button
+              class="w-7 h-7 rounded-full hover:bg-black/5 flex items-center justify-center"
+              @click="closePierMenu"
+            >
+              <UIcon
+                name="i-lucide-x"
+                class="size-3.5"
+              />
+            </button>
+          </div>
+
+          <div
+            v-if="(berthCountByPier[pierMenuFor.name] || 0) === 0"
+            class="bg-[#F4F7F8] rounded-[10px] p-2.5 mb-2.5"
+          >
+            <div class="text-[10px] uppercase tracking-wide text-[#5A6A78] font-semibold mb-1.5">
+              Voeg ligplaatsen toe
+            </div>
+            <div class="flex items-center gap-2 mb-1.5">
+              <label class="flex items-center gap-1 text-[11px] text-[#5A6A78]">
+                Aantal
+                <input
+                  v-model.number="pierMenuBerthCount"
+                  type="number"
+                  min="1"
+                  max="100"
+                  class="w-14 px-2 py-1 rounded-md border border-black/[0.12] bg-white text-sm font-semibold text-[#0A1520]"
+                >
+              </label>
+              <label class="flex items-center gap-1 text-[11px] text-[#5A6A78]">
+                Lengte
+                <input
+                  v-model.number="pierMenuBerthLength"
+                  type="number"
+                  min="4"
+                  max="30"
+                  class="w-12 px-2 py-1 rounded-md border border-black/[0.12] bg-white text-sm font-semibold text-[#0A1520]"
+                ><span class="text-[11px] text-[#5A6A78]">m</span>
+              </label>
+            </div>
+            <button
+              class="w-full py-1.5 rounded-full bg-primary-500 text-white text-[12px] font-semibold disabled:opacity-50"
+              :disabled="pierMenuBerthBusy"
+              @click="addBerthsFromMenu(pierMenuFor)"
+            >
+              {{ pierMenuBerthBusy ? 'Bezig…' : `+ ${pierMenuBerthCount} ligplaatsen` }}
+            </button>
+          </div>
+
+          <div class="text-[10px] uppercase tracking-wide text-[#5A6A78] font-semibold mb-1.5">
+            Maak alle ligplaatsen
+          </div>
+          <div class="grid grid-cols-2 gap-1.5 mb-2">
+            <button
+              class="px-2.5 py-2 rounded-[10px] bg-pink-500/10 text-pink-700 text-[12px] font-semibold hover:bg-pink-500/20"
+              @click="assignPierFunction(pierMenuFor, 'PASSANTEN')"
+            >
+              Passanten
+            </button>
+            <button
+              class="px-2.5 py-2 rounded-[10px] bg-emerald-500/10 text-emerald-700 text-[12px] font-semibold hover:bg-emerald-500/20"
+              @click="assignPierFunction(pierMenuFor, 'JAARPLAATS')"
+            >
+              Jaarplaats
+            </button>
+            <button
+              class="px-2.5 py-2 rounded-[10px] bg-amber-500/10 text-amber-700 text-[12px] font-semibold hover:bg-amber-500/20"
+              @click="assignPierFunction(pierMenuFor, 'SEIZOEN')"
+            >
+              Seizoen
+            </button>
+            <button
+              class="px-2.5 py-2 rounded-[10px] bg-purple-500/10 text-purple-700 text-[12px] font-semibold hover:bg-purple-500/20"
+              @click="assignPierFunction(pierMenuFor, 'STALLING')"
+            >
+              Stalling
+            </button>
+          </div>
+
+          <div class="border-t border-black/[0.06] pt-2 flex gap-1.5">
+            <button
+              class="flex-1 px-2.5 py-1.5 rounded-full bg-[#F4F7F8] text-[#0A1520] text-[11px] font-semibold inline-flex items-center justify-center gap-1 hover:bg-black/5"
+              @click="renamePierFromMenu(pierMenuFor)"
+            >
+              <UIcon
+                name="i-lucide-pencil"
+                class="size-3"
+              /> Hernoem
+            </button>
+            <button
+              class="flex-1 px-2.5 py-1.5 rounded-full bg-red-500/5 text-red-600 text-[11px] font-semibold inline-flex items-center justify-center gap-1 hover:bg-red-500/10"
+              @click="deletePierWithConfirm(pierMenuFor); closePierMenu()"
+            >
+              <UIcon
+                name="i-lucide-trash-2"
+                class="size-3"
+              /> Verwijder
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Slide-over: inline on desktop, overlay on mobile -->
