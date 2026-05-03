@@ -24,6 +24,13 @@ option {
   z-index: 20 !important;
 }
 
+/* Keep Leaflet map controls (zoom, layers, attribution) below the dashboard
+   mobile menu (z-[950]) and bottom nav (z-[900]); Leaflet's defaults are 1000. */
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 800 !important;
+}
+
 @theme static {
   /* Nautar — Tide Design System */
 
