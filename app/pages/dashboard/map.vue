@@ -757,8 +757,9 @@ function addBerthMarkers() {
     // Rectangle size: represent boat (long axis) perpendicular to pier
     const isCoarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
     const touchBoost = isEdit && isCoarse ? 1.5 : 1
-    const w = Math.round((isEdit ? 14 : 10) * touchBoost) // beam (px)
-    const h = Math.round((isEdit ? 28 : 20) * touchBoost) // length (px)
+    // Iets groter dan voorheen zodat de code-label leesbaar blijft.
+    const w = Math.round((isEdit ? 14 : 12) * touchBoost) // beam (px)
+    const h = Math.round((isEdit ? 28 : 24) * touchBoost) // length (px)
 
     // Side badge color
     const sideColor = berth.side === 'LEFT'
@@ -769,28 +770,27 @@ function addBerthMarkers() {
           ? '#F59E0B'
           : '#94A3B8'
 
-    // Passantenplekken krijgen een roze ring + dashed border zodat ze ook
-    // visueel herkenbaar zijn als de status niet PASSANT is (bijv. FREE).
     const isPassant = !!berth.isPassanten
-    const borderColor = isEdit ? sideColor : (isPassant ? '#EC4899' : 'white')
-    const borderStyle = isPassant && !isEdit ? 'dashed' : 'solid'
-    const ringShadow = isPassant && !isEdit
-      ? 'box-shadow: 0 1px 4px rgba(0,0,0,0.35), 0 0 0 1.5px rgba(236,72,153,0.35);'
-      : 'box-shadow: 0 1px 4px rgba(0,0,0,0.35);'
+    const borderColor = isEdit ? sideColor : 'white'
     const titleSuffix = isPassant ? ' (passant)' : ''
+    const labelText = berthShortCode(berth.code)
+    const labelFontSize = isEdit ? 8 : 9
+    const passantBadge = isPassant && !isEdit
+      ? `<div style="position:absolute;top:-4px;left:-4px;width:11px;height:11px;background:#EC4899;border:1.5px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:7px;font-weight:800;line-height:1;font-family:system-ui;transform:rotate(${-rot}deg);">P</div>`
+      : ''
 
     const html = `
       <div class="berth-marker-rot" style="transform: rotate(${rot}deg); transform-origin: center; width: ${w}px; height: ${h}px;">
         <div class="berth-marker" style="
           width: 100%; height: 100%; background: ${color};
-          border-radius: 3px; border: 2px ${borderStyle} ${borderColor};
-          ${ringShadow}
+          border-radius: 3px; border: 2px solid ${borderColor};
+          box-shadow: 0 1px 4px rgba(0,0,0,0.35);
           cursor: ${isEdit ? 'grab' : 'pointer'};
           transition: transform 0.15s;
           position: relative;
         " title="${berth.code} — ${statusLabels[status] || status}${titleSuffix}">
-          ${isEdit ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:white;font-size:8px;font-weight:700;text-shadow:0 0 2px #000;transform: rotate(${-rot}deg);">${berthShortCode(berth.code)}</div>` : ''}
-          ${isPassant && !isEdit ? `<div style="position:absolute;top:-3px;right:-3px;width:8px;height:8px;background:#EC4899;border:1.5px solid white;border-radius:50%;"></div>` : ''}
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:white;font-size:${labelFontSize}px;font-weight:700;text-shadow:0 0 2px rgba(0,0,0,0.7);transform: rotate(${-rot}deg);">${labelText}</div>
+          ${passantBadge}
         </div>
       </div>
     `
@@ -1586,8 +1586,8 @@ async function deleteFacility(f: any) {
       </div>
       <div class="border-t border-black/[0.06] mt-2 pt-2">
         <div class="flex items-center gap-1.5 text-[11px] text-[#5A6A78]">
-          <span class="w-3 h-3 rounded-sm border-[1.5px] border-dashed border-pink-500 shrink-0 relative">
-            <span class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-pink-500 rounded-full border border-white" />
+          <span class="relative w-3 h-3 rounded-sm bg-emerald-500 shrink-0">
+            <span class="absolute -top-1 -left-1 w-2.5 h-2.5 bg-pink-500 rounded-full border border-white text-[6px] font-bold text-white flex items-center justify-center leading-none">P</span>
           </span>
           Passantenplek
         </div>
@@ -2206,14 +2206,14 @@ async function deleteFacility(f: any) {
               <button
                 class="py-1 rounded-full text-[11px] font-semibold transition-colors"
                 :class="pierMenuBerthSide === pierMenuSideLabels.topValue ? 'bg-primary-500 text-white' : 'text-[#5A6A78] hover:bg-black/5'"
-                @click="pierMenuBerthSide = pierMenuSideLabels.topValue"
+                @click="pierMenuBerthSide = pierMenuSideLabels.topValue; pierMenuBerthPassanten = false"
               >
                 {{ pierMenuSideLabels.topLabel }}
               </button>
               <button
                 class="py-1 rounded-full text-[11px] font-semibold transition-colors"
                 :class="pierMenuBerthSide === pierMenuSideLabels.bottomValue ? 'bg-primary-500 text-white' : 'text-[#5A6A78] hover:bg-black/5'"
-                @click="pierMenuBerthSide = pierMenuSideLabels.bottomValue"
+                @click="pierMenuBerthSide = pierMenuSideLabels.bottomValue; pierMenuBerthPassanten = false"
               >
                 {{ pierMenuSideLabels.bottomLabel }}
               </button>
