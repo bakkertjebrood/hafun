@@ -50,9 +50,12 @@ export default defineNuxtConfig({
     appUrl: process.env.APP_URL || '',
     stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    cloudinaryApiKey: process.env.CLOUDINARY_API_KEY || '',
+    cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET || '',
     public: {
       googleEnabled: !!process.env.GOOGLE_CLIENT_ID,
-      stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || ''
+      stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
+      cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME || ''
     }
   },
 
