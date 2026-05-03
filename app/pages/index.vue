@@ -38,7 +38,7 @@ const features = [
 
 const steps = [
   { n: '01', title: 'Maak een account', desc: 'Registreer in 30 seconden. Geen creditcard nodig voor de proef.' },
-  { n: '02', title: 'Teken je haven', desc: 'AI herkent steigers en plaatst je ligplaatsen automatisch op de kaart.' },
+  { n: '02', title: 'Teken je haven', desc: 'Teken steigers op de satellietkaart en voeg ligplaatsen toe.' },
   { n: '03', title: 'Begin met beheren', desc: 'Importeer huurders, koppel boekhouding, en je bent live.' }
 ]
 </script>
@@ -170,7 +170,7 @@ const steps = [
             Live in één middag
           </h2>
           <p class="mt-3 text-[#2D3E4A]">
-            Onze AI doet het zware werk. Jij bevestigt en bent klaar.
+            Teken je steigers, importeer je huurders en je bent klaar.
           </p>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">

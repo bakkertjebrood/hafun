@@ -70,7 +70,7 @@ export function welcomeEmail(firstName: string, marinaName: string): { subject: 
           Hoi ${safeName}, je account voor <strong>${marinaName}</strong> staat klaar.
         </p>
         <p style="margin:0 0 12px;line-height:1.5;color:#2D3E4A;">
-          De volgende stap is het tekenen van je haven op de kaart. Onze AI plaatst de ligplaatsen automatisch.
+          De volgende stap is het tekenen van je steigers op de kaart en je ligplaatsen toevoegen.
           Daarna kun je huurders importeren en je boekhouding koppelen.
         </p>
         <p style="margin:24px 0;">

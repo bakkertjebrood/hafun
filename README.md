@@ -30,7 +30,6 @@ Vereiste environment variables (`heroku config:set ...`):
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
 | `POSTMARK_API_KEY` | Postmark Server token (transactionele mail) |
 | `EMAIL_FROM` | Geverifieerd Postmark sender adres |
-| `CLAUDE_API_KEY` | (Optioneel) Anthropic API key voor AI ligplaats-detectie |
 
 ### Google OAuth
 

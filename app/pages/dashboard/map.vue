@@ -43,13 +43,11 @@ const statusLabels: Record<string, string> = {
 // Datumfilter — bekijk de bezetting op een andere dag
 const viewDate = ref('')
 const showLegend = ref(false)
-const setupCtaDismissed = ref(false)
 const pierMenuFor = ref<any | null>(null)
 const pierMenuPos = ref<{ x: number, y: number } | null>(null)
 const pierMenuBerthCount = ref(4)
 const pierMenuBerthLength = ref(10)
 const pierMenuBerthBusy = ref(false)
-const hasSetupCta = computed(() => !setupCtaDismissed.value && !showAiResult.value && drawnPiers.value.length === 0)
 
 // Facility catalog: type → label, emoji marker glyph, brand color
 interface FacilityDef { label: string, glyph: string, color: string }
@@ -79,10 +77,6 @@ const FACILITY_TYPES = Object.keys(FACILITY_CATALOG)
 const facilities = ref<any[]>([])
 const facilityLayers: any[] = []
 const placingFacilityType = ref<string | null>(null)
-const suggestLoading = ref(false)
-const suggestions = ref<any[]>([])
-const suggestionLayers: any[] = []
-const suggestNotes = ref<string | null>(null)
 
 // Bearing (0 = north, 90 = east) from A to B
 function bearingOf(a: number[], b: number[]): number {
@@ -432,10 +426,6 @@ function quickStartDrawPier() {
 function onMapClick(e: any) {
   // Always dismiss any open pier action menu when tapping somewhere else.
   if (pierMenuFor.value) closePierMenu()
-  if (aiTapMode.value) {
-    addAiTapPoint([e.latlng.lat, e.latlng.lng])
-    return
-  }
   if (placingFacilityType.value) {
     const type = placingFacilityType.value
     placeFacilityAt(type, e.latlng.lat, e.latlng.lng)
@@ -688,473 +678,6 @@ async function positionBerthsAlongPiers() {
     positioningLoading.value = false
   }
 }
-
-// ─── AI SATELLITE ANALYSE ──────────────────────
-
-interface AiReviewPier {
-  name: string
-  startLat: number
-  startLng: number
-  endLat: number
-  endLng: number
-  leftBerths: number
-  rightBerths: number
-  hasHead: boolean
-  headStartLat?: number
-  headStartLng?: number
-  headEndLat?: number
-  headEndLng?: number
-  headBerths: number
-  avgBerthLength: number
-  avgBerthWidth: number
-  confidence: number
-  lengthMeters?: number
-}
-
-const aiAnalyzing = ref(false)
-const aiResult = ref<any>(null)
-const showAiResult = ref(false)
-const aiReviewPiers = ref<AiReviewPier[]>([])
-const aiTapMode = ref(false)
-const aiTapPoints = ref<number[][]>([])
-const aiCounting = ref(false)
-const aiWarnings = ref<string[]>([])
-let aiPierLayers: Record<string, { line: any, headLine?: any, startMarker: any, endMarker: any, label: any }> = {}
-let aiTapPreview: any = null
-let aiTapVertexLayers: any[] = []
-
-async function runAiAnalysis() {
-  if (!mapInstance) return
-  aiAnalyzing.value = true
-  error.value = null
-  disableAiTapMode()
-
-  try {
-    // Wait briefly for any in-flight tile loads at the current zoom
-    await new Promise(r => setTimeout(r, 800))
-
-    const html2canvas = (await import('html2canvas-pro')).default
-    const dpr = window.devicePixelRatio || 1
-    const scale = Math.min(Math.max(dpr * 2, 2), 3)
-    const container: HTMLElement = mapInstance.getContainer()
-    const canvas = await html2canvas(container, {
-      useCORS: true,
-      allowTaint: true,
-      scale,
-      logging: false,
-      width: container.offsetWidth,
-      height: container.offsetHeight
-    })
-
-    const imageBase64 = canvas.toDataURL('image/png')
-    const center = mapInstance.getCenter()
-    const b = mapInstance.getBounds()
-    const marina = mapData.value?.marina
-
-    const result = await $fetch('/api/onboarding/analyze', {
-      method: 'POST',
-      body: {
-        imageBase64,
-        imageWidth: canvas.width,
-        imageHeight: canvas.height,
-        bounds: {
-          north: b.getNorth(),
-          south: b.getSouth(),
-          east: b.getEast(),
-          west: b.getWest()
-        },
-        center: { lat: center.lat, lng: center.lng },
-        zoom: mapInstance.getZoom(),
-        marinaName: marina?.name || ''
-      }
-    })
-
-    aiResult.value = result
-    const incoming: AiReviewPier[] = (result.piers || []).map(normalizeAiPier)
-    const renameNotes: string[] = []
-    // Auto-rename to avoid clobbering existing piers in this marina.
-    const used = new Set<string>(drawnPiers.value.map((p: any) => p.name as string))
-    for (const p of incoming) {
-      let candidate = p.name
-      let suffix = 1
-      while (used.has(candidate)) {
-        candidate = `${p.name}${suffix}`
-        suffix += 1
-      }
-      if (candidate !== p.name) {
-        renameNotes.push(`Steiger ${p.name} hernoemd naar ${candidate} (bestond al)`)
-        p.name = candidate
-      }
-      used.add(candidate)
-    }
-    aiReviewPiers.value = incoming
-    aiWarnings.value = [...(result.warnings || []), ...renameNotes]
-    drawAiReviewPiers()
-    showAiResult.value = true
-    if (aiReviewPiers.value.length > 0) {
-      const allPoints: any[] = []
-      for (const p of aiReviewPiers.value) {
-        allPoints.push([p.startLat, p.startLng])
-        allPoints.push([p.endLat, p.endLng])
-      }
-      mapInstance.fitBounds(L.latLngBounds(allPoints).pad(0.15))
-    }
-  } catch (e: any) {
-    alert('AI analyse mislukt: ' + (e.data?.message || e.message))
-  } finally {
-    aiAnalyzing.value = false
-  }
-}
-
-function normalizeAiPier(p: any): AiReviewPier {
-  return {
-    name: String(p.name || '?'),
-    startLat: Number(p.startLat),
-    startLng: Number(p.startLng),
-    endLat: Number(p.endLat),
-    endLng: Number(p.endLng),
-    leftBerths: Number(p.leftBerths) || 0,
-    rightBerths: Number(p.rightBerths) || 0,
-    hasHead: !!p.hasHead,
-    headStartLat: typeof p.headStartLat === 'number' ? p.headStartLat : undefined,
-    headStartLng: typeof p.headStartLng === 'number' ? p.headStartLng : undefined,
-    headEndLat: typeof p.headEndLat === 'number' ? p.headEndLat : undefined,
-    headEndLng: typeof p.headEndLng === 'number' ? p.headEndLng : undefined,
-    headBerths: Number(p.headBerths) || 0,
-    avgBerthLength: Number(p.avgBerthLength) || 10,
-    avgBerthWidth: Number(p.avgBerthWidth) || 3.5,
-    confidence: Number(p.confidence) || 0.7,
-    lengthMeters: typeof p.lengthMeters === 'number' ? p.lengthMeters : undefined
-  }
-}
-
-function aiPierColor(p: AiReviewPier): string {
-  if (p.confidence >= 0.85) return '#10B981'
-  if (p.confidence >= 0.6) return '#F59E0B'
-  return '#EF4444'
-}
-
-function clearAiPierLayers() {
-  for (const k of Object.keys(aiPierLayers)) {
-    const layer = aiPierLayers[k]!
-    layer.line.remove()
-    if (layer.headLine) layer.headLine.remove()
-    layer.startMarker.remove()
-    layer.endMarker.remove()
-    layer.label.remove()
-  }
-  aiPierLayers = {}
-}
-
-function clearAiTapPreview() {
-  if (aiTapPreview) {
-    aiTapPreview.remove()
-    aiTapPreview = null
-  }
-  for (const v of aiTapVertexLayers) v.remove()
-  aiTapVertexLayers = []
-}
-
-function drawAiReviewPiers() {
-  if (!mapInstance || !L) return
-  clearAiPierLayers()
-  for (const p of aiReviewPiers.value) drawAiReviewPier(p)
-}
-
-function drawAiReviewPier(p: AiReviewPier) {
-  const color = aiPierColor(p)
-  const line = L.polyline(
-    [[p.startLat, p.startLng], [p.endLat, p.endLng]],
-    { color, weight: 5, opacity: 0.9, dashArray: '8, 6' }
-  ).addTo(mapInstance)
-
-  let headLine: any
-  if (p.hasHead && p.headStartLat != null && p.headEndLat != null) {
-    headLine = L.polyline(
-      [[p.headStartLat, p.headStartLng!], [p.headEndLat, p.headEndLng!]],
-      { color, weight: 4, opacity: 0.9, dashArray: '4, 6' }
-    ).addTo(mapInstance)
-  }
-
-  const start = makeAiEndpointMarker(p.startLat, p.startLng, color)
-  const end = makeAiEndpointMarker(p.endLat, p.endLng, color)
-
-  start.on('drag', (e: any) => {
-    const ll = e.target.getLatLng()
-    p.startLat = ll.lat
-    p.startLng = ll.lng
-    line.setLatLngs([[p.startLat, p.startLng], [p.endLat, p.endLng]])
-    aiPierLayers[p.name]?.label.setLatLng([(p.startLat + p.endLat) / 2, (p.startLng + p.endLng) / 2])
-  })
-  end.on('drag', (e: any) => {
-    const ll = e.target.getLatLng()
-    p.endLat = ll.lat
-    p.endLng = ll.lng
-    line.setLatLngs([[p.startLat, p.startLng], [p.endLat, p.endLng]])
-    aiPierLayers[p.name]?.label.setLatLng([(p.startLat + p.endLat) / 2, (p.startLng + p.endLng) / 2])
-  })
-
-  const label = L.marker([(p.startLat + p.endLat) / 2, (p.startLng + p.endLng) / 2], {
-    icon: L.divIcon({
-      className: 'pier-label',
-      html: `<div style="background:${color};color:white;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${p.name}</div>`,
-      iconSize: [30, 18],
-      iconAnchor: [15, 9]
-    }),
-    interactive: false
-  }).addTo(mapInstance)
-
-  aiPierLayers[p.name] = { line, headLine, startMarker: start, endMarker: end, label }
-}
-
-function makeAiEndpointMarker(lat: number, lng: number, color: string) {
-  const isCoarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
-  const size = isCoarse ? 28 : 20
-  const html = `<div style="
-    width:${size}px;height:${size}px;
-    background:white;border:3px solid ${color};border-radius:50%;
-    box-shadow:0 2px 6px rgba(0,0,0,0.35);
-  "></div>`
-  return L.marker([lat, lng], {
-    icon: L.divIcon({ className: 'pier-endpoint', html, iconSize: [size, size], iconAnchor: [size / 2, size / 2] }),
-    draggable: true,
-    zIndexOffset: 2000
-  }).addTo(mapInstance)
-}
-
-function nextAiPierName(): string {
-  const used = new Set([
-    ...aiReviewPiers.value.map(p => p.name),
-    ...drawnPiers.value.map((p: any) => p.name)
-  ])
-  for (let i = 0; i < 26; i++) {
-    const n = String.fromCharCode(65 + i)
-    if (!used.has(n)) return n
-  }
-  return `S${aiReviewPiers.value.length + 1}`
-}
-
-function updateAiPier(idx: number, next: AiReviewPier) {
-  aiReviewPiers.value[idx] = { ...next }
-}
-
-function removeAiPier(idx: number) {
-  const removed = aiReviewPiers.value.splice(idx, 1)[0]
-  if (removed && aiPierLayers[removed.name]) {
-    const l = aiPierLayers[removed.name]!
-    l.line.remove()
-    l.startMarker.remove()
-    l.endMarker.remove()
-    l.label.remove()
-    if (l.headLine) l.headLine.remove()
-    Reflect.deleteProperty(aiPierLayers, removed.name)
-  }
-}
-
-function renameAiPier(idx: number, newName: string) {
-  const p = aiReviewPiers.value[idx]
-  if (!p) return
-  if (aiReviewPiers.value.some((x, i) => i !== idx && x.name === newName)) {
-    alert(`Naam "${newName}" is al in gebruik`)
-    return
-  }
-  if (drawnPiers.value.some((x: any) => x.name === newName)) {
-    alert(`Steiger "${newName}" bestaat al op deze haven. Kies een andere letter.`)
-    return
-  }
-  const oldName = p.name
-  p.name = newName
-  if (aiPierLayers[oldName]) {
-    aiPierLayers[newName] = aiPierLayers[oldName]!
-    Reflect.deleteProperty(aiPierLayers, oldName)
-    aiPierLayers[newName].label.setIcon(L.divIcon({
-      className: 'pier-label',
-      html: `<div style="background:${aiPierColor(p)};color:white;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${newName}</div>`,
-      iconSize: [30, 18],
-      iconAnchor: [15, 9]
-    }))
-  }
-}
-
-function enableAiTapMode() {
-  aiTapMode.value = true
-  aiTapPoints.value = []
-  clearAiTapPreview()
-  if (mapInstance) mapInstance.getContainer().style.cursor = 'crosshair'
-}
-
-function disableAiTapMode() {
-  aiTapMode.value = false
-  aiTapPoints.value = []
-  clearAiTapPreview()
-  if (mapInstance) mapInstance.getContainer().style.cursor = ''
-}
-
-async function addAiTapPoint(p: number[]) {
-  aiTapPoints.value.push(p)
-  aiTapVertexLayers.push(
-    L.circleMarker(p, { radius: 7, fillColor: '#00A9A5', fillOpacity: 1, color: 'white', weight: 2 }).addTo(mapInstance)
-  )
-  if (aiTapPoints.value.length === 2) {
-    if (aiTapPreview) aiTapPreview.remove()
-    aiTapPreview = L.polyline(aiTapPoints.value, { color: '#00A9A5', weight: 4, dashArray: '6, 4' }).addTo(mapInstance)
-    await runAiTapCount()
-  }
-}
-
-async function runAiTapCount() {
-  if (aiTapPoints.value.length !== 2 || !mapInstance) return
-  aiCounting.value = true
-  try {
-    await new Promise(r => setTimeout(r, 600))
-    const html2canvas = (await import('html2canvas-pro')).default
-    const dpr = window.devicePixelRatio || 1
-    const scale = Math.min(Math.max(dpr * 2, 2), 3)
-    const container: HTMLElement = mapInstance.getContainer()
-    const canvas = await html2canvas(container, {
-      useCORS: true, allowTaint: true, scale, logging: false,
-      width: container.offsetWidth, height: container.offsetHeight
-    })
-    const imageBase64 = canvas.toDataURL('image/png')
-    const b = mapInstance.getBounds()
-    const start = aiTapPoints.value[0]!
-    const end = aiTapPoints.value[1]!
-
-    const result = await $fetch<{
-      leftBerths: number, rightBerths: number, hasHead: boolean, headBerths: number
-      avgBerthLength: number, avgBerthWidth: number, confidence: number, lengthMeters: number
-    }>('/api/piers/count-berths-between', {
-      method: 'POST',
-      body: {
-        imageBase64,
-        bounds: { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() },
-        imageWidth: canvas.width,
-        imageHeight: canvas.height,
-        line: [start, end],
-        pierName: nextAiPierName()
-      }
-    })
-
-    const newPier: AiReviewPier = {
-      name: nextAiPierName(),
-      startLat: start[0]!,
-      startLng: start[1]!,
-      endLat: end[0]!,
-      endLng: end[1]!,
-      leftBerths: result.leftBerths,
-      rightBerths: result.rightBerths,
-      hasHead: result.hasHead,
-      headBerths: result.headBerths,
-      avgBerthLength: result.avgBerthLength,
-      avgBerthWidth: result.avgBerthWidth,
-      confidence: result.confidence,
-      lengthMeters: result.lengthMeters
-    }
-    aiReviewPiers.value.push(newPier)
-    drawAiReviewPier(newPier)
-    showAiResult.value = true
-  } catch (e: any) {
-    alert('Tellen mislukt: ' + (e.data?.message || e.message))
-  } finally {
-    aiCounting.value = false
-    aiTapPoints.value = []
-    clearAiTapPreview()
-  }
-}
-
-function startAiTapAdd() {
-  showAiResult.value = true
-  enableAiTapMode()
-}
-
-function cancelAiReview() {
-  clearAiPierLayers()
-  disableAiTapMode()
-  aiReviewPiers.value = []
-  aiResult.value = null
-  aiWarnings.value = []
-  showAiResult.value = false
-}
-
-async function applyAiResult() {
-  if (!aiReviewPiers.value.length || !marinaId.value) return
-  positioningLoading.value = true
-
-  try {
-    for (const pier of aiReviewPiers.value) {
-      if (!pier.startLat || !pier.endLat) continue
-
-      // Create/update pier line
-      const body: any = {
-        marinaId: marinaId.value,
-        name: pier.name,
-        points: [[pier.startLat, pier.startLng], [pier.endLat, pier.endLng]]
-      }
-      if (pier.hasHead && pier.headStartLat != null && pier.headEndLat != null) {
-        body.headPoints = [[pier.headStartLat, pier.headStartLng], [pier.headEndLat, pier.headEndLng]]
-      }
-      await $fetch('/api/piers', { method: 'POST', body })
-
-      // Create berths if none exist yet for this pier.
-      // Skip if any berth already exists to avoid duplicating a manually-set-up pier.
-      const existingBerths = (mapData.value?.berths || []).filter((b: any) => b.pier === pier.name)
-      if (existingBerths.length === 0) {
-        const length = pier.avgBerthLength || 10
-        const width = pier.avgBerthWidth || 3.5
-        if (pier.leftBerths > 0) {
-          await $fetch('/api/berths/bulk', {
-            method: 'POST',
-            body: { marinaId: marinaId.value, pier: pier.name, count: pier.leftBerths, length, width, side: 'LEFT' }
-          })
-        }
-        if (pier.rightBerths > 0) {
-          await $fetch('/api/berths/bulk', {
-            method: 'POST',
-            body: { marinaId: marinaId.value, pier: pier.name, count: pier.rightBerths, length, width, side: 'RIGHT' }
-          })
-        }
-        if (pier.hasHead && pier.headBerths > 0) {
-          await $fetch('/api/berths/bulk', {
-            method: 'POST',
-            body: {
-              marinaId: marinaId.value,
-              pier: pier.name,
-              count: pier.headBerths,
-              length,
-              width,
-              side: 'HEAD',
-              codePrefix: `${pier.name}-KOP`
-            }
-          })
-        }
-      }
-    }
-
-    // Position berths along the new piers
-    await $fetch('/api/piers/position-berths', {
-      method: 'POST',
-      body: { marinaId: marinaId.value }
-    })
-
-    // Refresh everything
-    await loadPiers()
-    await refreshMapData()
-    clearMarkers()
-    addBerthMarkers()
-    cancelAiReview()
-
-    if (markers.length > 0) {
-      const group = L.featureGroup(markers)
-      mapInstance.fitBounds(group.getBounds().pad(0.1))
-    }
-  } catch (e: any) {
-    alert('Toepassen mislukt: ' + (e.data?.message || e.message))
-  } finally {
-    positioningLoading.value = false
-  }
-}
-
-const error = ref<string | null>(null)
 
 // ─── BERTH MARKERS ──────────────────────────────
 
@@ -1785,138 +1308,6 @@ async function deleteFacility(f: any) {
     alert(e?.data?.message || 'Verwijderen mislukt')
   }
 }
-
-// ─── AI FACILITY SUGGESTIONS ───────────────────
-
-function clearSuggestionMarkers() {
-  suggestionLayers.forEach(l => l.remove())
-  suggestionLayers.length = 0
-}
-
-function renderSuggestionMarkers() {
-  clearSuggestionMarkers()
-  if (!mapInstance || !L) return
-  for (const [idx, s] of suggestions.value.entries()) {
-    const icon = L.divIcon({
-      className: 'facility-marker-wrapper',
-      html: facilityIconHtml(s.type, { ghost: true }),
-      iconSize: [32, 32],
-      iconAnchor: [16, 16]
-    })
-    const marker = L.marker([s.gpsLat, s.gpsLng], { icon, zIndexOffset: 900 }).addTo(mapInstance)
-    const def = FACILITY_CATALOG[s.type]
-    const label = `💡 ${s.name || def?.label || s.type}${typeof s.confidence === 'number' ? ` (${Math.round(s.confidence * 100)}%)` : ''}`
-    marker.bindTooltip(label, { direction: 'top', offset: [0, -14], permanent: false })
-    marker.on('click', () => acceptSuggestion(idx))
-    suggestionLayers.push(marker)
-  }
-}
-
-async function runFacilitySuggest() {
-  if (!mapInstance || !marinaId.value) return
-  suggestLoading.value = true
-  try {
-    const html2canvas = (await import('html2canvas-pro')).default
-    const dpr = window.devicePixelRatio || 1
-    const scale = Math.min(Math.max(dpr * 2, 2), 3)
-    const container: HTMLElement = mapInstance.getContainer()
-    const canvas = await html2canvas(container, {
-      useCORS: true,
-      allowTaint: true,
-      scale,
-      logging: false,
-      width: container.offsetWidth,
-      height: container.offsetHeight
-    })
-    const imageBase64 = canvas.toDataURL('image/png')
-    const bounds = mapInstance.getBounds()
-    const center = mapInstance.getCenter()
-
-    const result = await $fetch('/api/facilities/suggest', {
-      method: 'POST',
-      body: {
-        imageBase64,
-        bounds: {
-          north: bounds.getNorth(), south: bounds.getSouth(),
-          east: bounds.getEast(), west: bounds.getWest()
-        },
-        center: { lat: center.lat, lng: center.lng },
-        zoom: mapInstance.getZoom(),
-        marinaName: mapData.value?.marina?.name || ''
-      }
-    }) as any
-
-    suggestions.value = result.facilities || []
-    suggestNotes.value = result.notes || null
-    renderSuggestionMarkers()
-    if (!suggestions.value.length) {
-      alert('AI kon geen faciliteiten herkennen. Zoom verder uit of naar een ander deel van de haven en probeer opnieuw.')
-    }
-  } catch (e: any) {
-    alert('AI suggestie mislukt: ' + (e.data?.message || e.message))
-  } finally {
-    suggestLoading.value = false
-  }
-}
-
-async function acceptSuggestion(idx: number) {
-  const s = suggestions.value[idx]
-  if (!s || !marinaId.value) return
-  try {
-    const created = await $fetch('/api/facilities', {
-      method: 'POST',
-      body: {
-        marinaId: marinaId.value,
-        type: s.type,
-        name: s.name || null,
-        gpsLat: s.gpsLat,
-        gpsLng: s.gpsLng
-      }
-    }) as any
-    facilities.value.push(created)
-    suggestions.value.splice(idx, 1)
-    renderFacilityMarkers()
-    renderSuggestionMarkers()
-  } catch (e: any) {
-    alert(e?.data?.message || 'Suggestie overnemen mislukt')
-  }
-}
-
-async function acceptAllSuggestions() {
-  const list = suggestions.value.slice()
-  for (const s of list) {
-    try {
-      const created = await $fetch('/api/facilities', {
-        method: 'POST',
-        body: {
-          marinaId: marinaId.value,
-          type: s.type,
-          name: s.name || null,
-          gpsLat: s.gpsLat,
-          gpsLng: s.gpsLng
-        }
-      }) as any
-      facilities.value.push(created)
-    } catch (err) {
-      console.error('Suggestie overslaan:', err)
-    }
-  }
-  suggestions.value = []
-  suggestNotes.value = null
-  renderFacilityMarkers()
-  clearSuggestionMarkers()
-}
-
-function rejectAllSuggestions() {
-  suggestions.value = []
-  suggestNotes.value = null
-  clearSuggestionMarkers()
-}
-
-function rejectSuggestion(idx: number) {
-  suggestions.value.splice(idx, 1)
-  renderSuggestionMarkers()
-}
 </script>
 
 <template>
@@ -1945,18 +1336,11 @@ function rejectSuggestion(idx: number) {
 
         <!-- Actions (desktop only — mobile uses FAB) -->
         <button
-          class="hidden lg:inline-flex px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold transition-all shrink-0"
+          class="px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold transition-all shrink-0"
           :class="editMode ? 'bg-primary-500 text-white' : 'bg-[#F4F7F8] text-[#5A6A78]'"
           @click="toggleEditMode"
         >
           {{ editMode ? 'Klaar' : 'Bewerken' }}
-        </button>
-        <button
-          class="hidden lg:inline-flex px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] transition-all shrink-0 disabled:opacity-50"
-          :disabled="aiAnalyzing"
-          @click="runAiAnalysis"
-        >
-          {{ aiAnalyzing ? 'AI analyseert...' : 'AI analyse' }}
         </button>
 
         <!-- Date filter -->
@@ -1978,7 +1362,7 @@ function rejectSuggestion(idx: number) {
         </div>
 
         <button
-          class="hidden lg:inline-flex px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0"
+          class="px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0"
           :class="showLegend ? '!bg-primary-500/10 !text-primary-600' : ''"
           title="Legenda"
           @click="showLegend = !showLegend"
@@ -2019,8 +1403,7 @@ function rejectSuggestion(idx: number) {
     <!-- Legenda-paneel -->
     <div
       v-if="showLegend"
-      class="absolute z-[500] right-4 lg:top-20 bg-white/95 backdrop-blur-sm border border-black/[0.08] rounded-[12px] shadow-lg p-3 w-[200px]"
-      :class="hasSetupCta ? 'top-44' : 'top-20'"
+      class="absolute z-[500] right-4 top-20 bg-white/95 backdrop-blur-sm border border-black/[0.08] rounded-[12px] shadow-lg p-3 w-[200px]"
     >
       <div class="flex items-center justify-between mb-2">
         <div class="text-[11px] uppercase tracking-widest text-[#5A6A78] font-semibold">
@@ -2420,18 +1803,6 @@ function rejectSuggestion(idx: number) {
               <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold">
                 Faciliteiten ({{ facilities.length }})
               </div>
-              <button
-                class="px-2 py-1 rounded-full text-[10px] font-semibold bg-[#F4F7F8] text-[#0A1520] hover:bg-black/5 disabled:opacity-50 inline-flex items-center gap-1"
-                :disabled="suggestLoading"
-                title="Laat AI faciliteiten voorstellen op basis van de satellietfoto"
-                @click="runFacilitySuggest"
-              >
-                <UIcon
-                  name="i-lucide-sparkles"
-                  class="size-3"
-                />
-                {{ suggestLoading ? 'AI zoekt...' : 'AI suggesties' }}
-              </button>
             </div>
 
             <div class="text-[11px] text-[#5A6A78] mb-2">
@@ -2468,74 +1839,6 @@ function rejectSuggestion(idx: number) {
               >
                 Stop
               </button>
-            </div>
-
-            <!-- AI suggestions banner -->
-            <div
-              v-if="suggestions.length"
-              class="rounded-[10px] bg-amber-500/10 border border-amber-500/30 p-2 mb-2"
-            >
-              <div class="flex items-center gap-1.5 mb-1.5">
-                <UIcon
-                  name="i-lucide-sparkles"
-                  class="size-3 text-amber-600"
-                />
-                <span class="text-[11px] font-semibold text-[#B45309]">
-                  AI suggesties ({{ suggestions.length }})
-                </span>
-              </div>
-              <div
-                v-if="suggestNotes"
-                class="text-[10px] text-[#92400E] mb-1.5 italic"
-              >
-                {{ suggestNotes }}
-              </div>
-              <div class="flex flex-col gap-1 max-h-[180px] overflow-y-auto">
-                <div
-                  v-for="(s, idx) in suggestions"
-                  :key="idx"
-                  class="flex items-center gap-1.5 text-[11px] bg-white/70 rounded-md px-1.5 py-1"
-                >
-                  <span class="text-sm">{{ FACILITY_CATALOG[s.type]?.glyph || '📍' }}</span>
-                  <span class="flex-1 min-w-0 truncate text-[#0A1520]">
-                    {{ s.name || FACILITY_CATALOG[s.type]?.label || s.type }}
-                  </span>
-                  <button
-                    class="w-5 h-5 rounded bg-primary-500 text-white flex items-center justify-center hover:bg-primary-600"
-                    title="Accepteer"
-                    @click="acceptSuggestion(idx)"
-                  >
-                    <UIcon
-                      name="i-lucide-check"
-                      class="size-3"
-                    />
-                  </button>
-                  <button
-                    class="w-5 h-5 rounded bg-[#F4F7F8] text-[#5A6A78] flex items-center justify-center hover:bg-black/10"
-                    title="Verwerp"
-                    @click="rejectSuggestion(idx)"
-                  >
-                    <UIcon
-                      name="i-lucide-x"
-                      class="size-3"
-                    />
-                  </button>
-                </div>
-              </div>
-              <div class="flex gap-1.5 mt-1.5">
-                <button
-                  class="flex-1 py-1 rounded-md bg-primary-500 text-white text-[10px] font-semibold hover:bg-primary-600"
-                  @click="acceptAllSuggestions"
-                >
-                  Alles accepteren
-                </button>
-                <button
-                  class="px-2 py-1 rounded-md bg-[#F4F7F8] text-[#5A6A78] text-[10px] font-medium hover:bg-black/5"
-                  @click="rejectAllSuggestions"
-                >
-                  Wis
-                </button>
-              </div>
             </div>
 
             <!-- Existing facilities list -->
@@ -2617,19 +1920,9 @@ function rejectSuggestion(idx: number) {
           <UIcon name="i-lucide-list" class="size-5 text-[#0A1520]" />
         </button>
 
-        <!-- Setup wizard CTA when marina has no piers yet -->
-        <MapSetupWizardCta
-          v-if="!setupCtaDismissed && !showAiResult && drawnPiers.length === 0"
-          :marina-name="mapData?.marina?.name"
-          :has-piers="false"
-          :loading="aiAnalyzing"
-          @scan="runAiAnalysis"
-          @dismiss="setupCtaDismissed = true"
-        />
-
         <!-- Edit mode floating "+ Steiger" button -->
         <button
-          v-if="editMode && drawMode === 'off' && !pierMenuFor && !aiTapMode && !showAiResult && !placingFacilityType"
+          v-if="editMode && drawMode === 'off' && !pierMenuFor && !placingFacilityType"
           class="absolute z-[1050] bottom-4 left-4 lg:left-6 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-primary-500 text-white text-sm font-semibold shadow-xl hover:bg-primary-600"
           @click="quickStartDrawPier"
         >
@@ -2774,152 +2067,6 @@ function rejectSuggestion(idx: number) {
         @delete-requested="deleteBerthWithConfirm(selectedBerth)"
       />
     </div>
-
-    <!-- AI review panel: interactive scan-review-confirm flow -->
-    <Transition name="ai-review">
-      <div
-        v-if="showAiResult"
-        class="fixed z-[1500] inset-x-0 bottom-0 lg:inset-y-0 lg:right-0 lg:left-auto lg:w-[400px] bg-white border-t lg:border-t-0 lg:border-l border-black/[0.08] shadow-2xl flex flex-col max-h-[80vh] lg:max-h-none"
-      >
-        <div class="px-4 py-3 border-b border-black/[0.08] flex items-center justify-between gap-2 shrink-0">
-          <div class="min-w-0">
-            <div class="text-sm font-semibold text-[#0A1520] inline-flex items-center gap-1.5">
-              <UIcon
-                name="i-lucide-sparkles"
-                class="size-4 text-primary-500"
-              />
-              AI-analyse
-            </div>
-            <div class="text-[11px] text-[#5A6A78] truncate">
-              {{ aiReviewPiers.length }} steigers · pas waar nodig aan
-            </div>
-          </div>
-          <button
-            class="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center"
-            title="Sluiten"
-            @click="cancelAiReview"
-          >
-            <UIcon
-              name="i-lucide-x"
-              class="size-4"
-            />
-          </button>
-        </div>
-
-        <div
-          v-if="aiResult?.notes"
-          class="px-4 py-2 bg-primary-500/5 border-b border-primary-500/20 text-[11px] text-[#0A1520] shrink-0"
-        >
-          {{ aiResult.notes }}
-        </div>
-
-        <div
-          v-if="aiTapMode"
-          class="px-4 py-2 bg-primary-500/10 border-b border-primary-500/20 text-[11px] text-primary-700 shrink-0 flex items-center justify-between gap-2"
-        >
-          <span v-if="!aiCounting">
-            Tik 2 punten op de kaart per steiger ({{ aiTapPoints.length }}/2). AI telt de ligplaatsen.
-          </span>
-          <span
-            v-else
-            class="inline-flex items-center gap-1.5"
-          >
-            <UIcon
-              name="i-lucide-loader-2"
-              class="size-3.5 animate-spin"
-            /> AI telt ligplaatsen…
-          </span>
-          <button
-            class="text-primary-700/70 hover:text-primary-700 text-[11px] font-semibold"
-            @click="disableAiTapMode"
-          >
-            Stop
-          </button>
-        </div>
-
-        <div class="flex-1 overflow-y-auto p-3 space-y-2">
-          <div
-            v-if="!aiReviewPiers.length"
-            class="text-center text-[12px] text-[#5A6A78] py-6"
-          >
-            Geen steigers gedetecteerd. Voeg er handmatig toe via "Voeg steiger toe".
-          </div>
-
-          <MapPierReviewCard
-            v-for="(p, i) in aiReviewPiers"
-            :key="p.name + i"
-            :pier="p"
-            @update="updateAiPier(i, $event)"
-            @remove="removeAiPier(i)"
-            @rename="renameAiPier(i, $event)"
-          />
-
-          <div
-            v-if="aiWarnings.length"
-            class="bg-amber-500/5 border border-amber-500/20 rounded-[12px] p-3"
-          >
-            <div class="text-[11px] font-semibold text-amber-700 mb-1">
-              Opmerkingen
-            </div>
-            <ul class="text-[11px] text-amber-700 list-disc pl-4 space-y-0.5">
-              <li
-                v-for="w in aiWarnings"
-                :key="w"
-              >
-                {{ w }}
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <div
-          class="px-4 py-3 border-t border-black/[0.08] shrink-0 space-y-2"
-          style="padding-bottom: max(env(safe-area-inset-bottom), 12px);"
-        >
-          <button
-            class="w-full py-2.5 rounded-full text-sm font-semibold inline-flex items-center justify-center gap-1.5"
-            :class="aiTapMode ? 'bg-primary-500 text-white' : 'bg-[#F4F7F8] text-[#0A1520]'"
-            @click="aiTapMode ? disableAiTapMode() : startAiTapAdd()"
-          >
-            <UIcon
-              :name="aiTapMode ? 'i-lucide-x' : 'i-lucide-map-pin-plus'"
-              class="size-4"
-            />
-            {{ aiTapMode ? 'Stop tikken' : 'Voeg steiger toe (tik 2 punten)' }}
-          </button>
-          <div class="flex gap-2">
-            <button
-              class="flex-1 py-2.5 rounded-full bg-primary-500 text-white text-sm font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
-              :disabled="positioningLoading || !aiReviewPiers.length"
-              @click="applyAiResult"
-            >
-              <UIcon
-                v-if="positioningLoading"
-                name="i-lucide-loader-2"
-                class="size-4 animate-spin"
-              />
-              {{ positioningLoading ? 'Bezig…' : 'Toepassen op kaart' }}
-            </button>
-            <button
-              class="px-4 py-2.5 rounded-full bg-[#F4F7F8] text-[#5A6A78] text-sm font-semibold"
-              @click="cancelAiReview"
-            >
-              Annuleer
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- Mobile floating action button — replaces overflow topbar buttons -->
-    <MapActionsFab
-      :edit-mode="editMode"
-      :ai-analyzing="aiAnalyzing"
-      :show-legend="showLegend"
-      @toggle-edit="toggleEditMode"
-      @run-ai="runAiAnalysis"
-      @toggle-legend="showLegend = !showLegend"
-    />
   </div>
 </template>
 
@@ -2949,27 +2096,6 @@ function rejectSuggestion(idx: number) {
 @media (max-width: 1023px) {
   .leaflet-top.leaflet-left {
     top: 60px;
-  }
-}
-
-.ai-review-enter-active,
-.ai-review-leave-active {
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s;
-}
-
-@media (min-width: 1024px) {
-  .ai-review-enter-from,
-  .ai-review-leave-to {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-}
-
-@media (max-width: 1023px) {
-  .ai-review-enter-from,
-  .ai-review-leave-to {
-    transform: translateY(100%);
-    opacity: 0;
   }
 }
 </style>
