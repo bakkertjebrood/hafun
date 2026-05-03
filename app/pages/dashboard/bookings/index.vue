@@ -19,6 +19,11 @@ const newBooking = ref({
   persons: 1
 })
 const saving = ref(false)
+const errorMessage = ref('')
+
+function fetchErrorMessage(e: any, fallback: string) {
+  return e?.data?.message || e?.statusMessage || e?.message || fallback
+}
 
 const statusLabels: Record<string, string> = {
   reserved: 'Gereserveerd',
@@ -57,9 +62,10 @@ async function fetchBerths() {
 async function createBooking() {
   if (!newBooking.value.berthId || !newBooking.value.guestName || !newBooking.value.dateTo) return
   saving.value = true
+  errorMessage.value = ''
+  let guest: { id: string } | null = null
   try {
-    // Create guest first
-    const guest = await $fetch('/api/guests', {
+    guest = await $fetch('/api/guests', {
       method: 'POST',
       body: {
         name: newBooking.value.guestName,
@@ -70,30 +76,44 @@ async function createBooking() {
         persons: newBooking.value.persons
       }
     }) as any
+  }
+  catch (e: any) {
+    errorMessage.value = fetchErrorMessage(e, 'Kon passant niet aanmaken')
+    saving.value = false
+    return
+  }
 
-    // Create booking
+  try {
     await $fetch('/api/bookings', {
       method: 'POST',
       body: {
         berthId: newBooking.value.berthId,
-        guestId: guest.id,
+        guestId: guest!.id,
         dateFrom: newBooking.value.dateFrom,
         dateTo: newBooking.value.dateTo,
         persons: newBooking.value.persons
       }
     })
 
-    // Reset form
     newBooking.value = { berthId: '', guestName: '', boatName: '', boatLength: '', dateFrom: new Date().toISOString().split('T')[0], dateTo: '', persons: 1 }
     activeTab.value = 'today'
     await Promise.all([fetchToday(), fetchAll()])
+  }
+  catch (e: any) {
+    errorMessage.value = fetchErrorMessage(e, 'Kon boeking niet aanmaken')
   }
   finally { saving.value = false }
 }
 
 async function updateStatus(id: string, status: string) {
-  await $fetch(`/api/bookings/${id}`, { method: 'PUT', body: { status } })
-  await Promise.all([fetchToday(), fetchAll()])
+  errorMessage.value = ''
+  try {
+    await $fetch(`/api/bookings/${id}`, { method: 'PUT', body: { status } })
+    await Promise.all([fetchToday(), fetchAll()])
+  }
+  catch (e: any) {
+    errorMessage.value = fetchErrorMessage(e, 'Status bijwerken mislukt')
+  }
 }
 
 function formatDate(d: string) {
@@ -124,6 +144,13 @@ function nights(from: string, to: string) {
       >
         + Passant inchecken
       </button>
+    </div>
+
+    <!-- Error banner -->
+    <div v-if="errorMessage" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ errorMessage }}</div>
+      <button class="text-xs text-red-700 underline" @click="errorMessage = ''">Sluiten</button>
     </div>
 
     <!-- Tabs -->

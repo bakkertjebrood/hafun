@@ -9,6 +9,12 @@ const customers = ref<any[]>([])
 const tariffs = ref<any[]>([])
 const marinaId = ref('')
 const syncing = ref(false)
+const loadError = ref('')
+const errorMessage = ref('')
+
+function fetchErrorMessage(e: any, fallback: string) {
+  return e?.data?.message || e?.statusMessage || e?.message || fallback
+}
 
 const activeTab = ref<'invoices' | 'new'>('invoices')
 
@@ -42,12 +48,29 @@ const statusColors: Record<string, string> = {
   draft: '#5A6A78', sent: '#F59E0B', paid: '#10B981', overdue: '#EF4444'
 }
 
-onMounted(async () => {
-  const discovered = await $fetch('/api/berths/discover') as any
-  marinaId.value = discovered.marinaId
-  await Promise.all([fetchInvoices(), fetchConfig(), fetchCustomers(), fetchTariffs()])
+async function loadAll() {
+  loading.value = true
+  loadError.value = ''
+  try {
+    const discovered = await $fetch('/api/berths/discover') as any
+    marinaId.value = discovered.marinaId
+  }
+  catch (e: any) {
+    loadError.value = fetchErrorMessage(e, 'Kon haven niet laden')
+    loading.value = false
+    return
+  }
+
+  const results = await Promise.allSettled([fetchInvoices(), fetchConfig(), fetchCustomers(), fetchTariffs()])
+  const failed = results.filter(r => r.status === 'rejected') as PromiseRejectedResult[]
+  if (failed.length) {
+    const first = failed[0].reason
+    loadError.value = fetchErrorMessage(first, 'Een deel van de gegevens kon niet geladen worden')
+  }
   loading.value = false
-})
+}
+
+onMounted(loadAll)
 
 async function fetchInvoices() {
   const q: Record<string, string> = {}
@@ -67,8 +90,14 @@ watch([filterFrom, filterTo, filterStatus, filterMethod], fetchInvoices)
 
 async function sendReminder(inv: any) {
   if (!confirm(`Herinnering versturen voor ${inv.number}?`)) return
-  await $fetch(`/api/invoices/${inv.id}/reminder`, { method: 'POST' })
-  await fetchInvoices()
+  errorMessage.value = ''
+  try {
+    await $fetch(`/api/invoices/${inv.id}/reminder`, { method: 'POST' })
+    await fetchInvoices()
+  }
+  catch (e: any) {
+    errorMessage.value = fetchErrorMessage(e, 'Herinnering versturen mislukt')
+  }
 }
 
 function copyPaymentLink(url: string) {
@@ -85,6 +114,7 @@ function openPayment(inv: any) {
 async function savePayment() {
   if (!paymentInvoice.value || !paymentAmount.value) return
   paymentSaving.value = true
+  errorMessage.value = ''
   try {
     await $fetch('/api/payments', {
       method: 'POST',
@@ -96,6 +126,9 @@ async function savePayment() {
     })
     paymentInvoice.value = null
     await fetchInvoices()
+  }
+  catch (e: any) {
+    errorMessage.value = fetchErrorMessage(e, 'Betaling registreren mislukt')
   }
   finally {
     paymentSaving.value = false
@@ -206,16 +239,20 @@ async function sendInvoice() {
     }
   }
   catch (e: any) {
-    alert(e.data?.message || 'Versturen mislukt')
+    errorMessage.value = fetchErrorMessage(e, 'Versturen mislukt')
   }
   finally { sending.value = false }
 }
 
 async function syncAll() {
   syncing.value = true
+  errorMessage.value = ''
   try {
     await $fetch('/api/accounting/sync', { method: 'POST' })
     await fetchInvoices()
+  }
+  catch (e: any) {
+    errorMessage.value = fetchErrorMessage(e, 'Sync mislukt')
   }
   finally { syncing.value = false }
 }
@@ -259,6 +296,20 @@ function formatDate(d: string) {
           + Factuur versturen
         </button>
       </div>
+    </div>
+
+    <!-- Load error -->
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3 print:hidden">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="loadAll">Opnieuw laden</button>
+    </div>
+
+    <!-- Action error -->
+    <div v-if="errorMessage" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3 print:hidden">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ errorMessage }}</div>
+      <button class="text-xs text-red-700 underline" @click="errorMessage = ''">Sluiten</button>
     </div>
 
     <!-- Tabs -->
