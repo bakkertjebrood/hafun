@@ -6,6 +6,7 @@ let mapInstance: any = null
 let L: any = null
 
 const selectedBerth = ref<any>(null)
+const showCustomerSearch = ref(false)
 const slideOverOpen = ref(false)
 const activePier = ref<string | null>(null)
 const loading = ref(true)
@@ -942,6 +943,11 @@ async function onStatusChanged() {
   if (selectedBerth.value) {
     selectedBerth.value = await $fetch(`/api/berths/${selectedBerth.value.id}`)
   }
+}
+
+async function onCustomerLinked() {
+  showCustomerSearch.value = false
+  await onStatusChanged()
 }
 
 async function onNoteAdded() {
@@ -2335,11 +2341,21 @@ async function deleteFacility(f: any) {
         @close="slideOverOpen = false"
         @status-changed="onStatusChanged"
         @note-added="onNoteAdded"
-        @passanten-changed="onStatusChanged"
+        @type-changed="onStatusChanged"
         @delete-requested="deleteBerthWithConfirm(selectedBerth)"
         @flip-side="flipBerthSide(selectedBerth)"
+        @link-customer="showCustomerSearch = true"
       />
     </div>
+
+    <!-- Klant zoeken + koppelen aan de geselecteerde ligplaats -->
+    <CustomerSearchModal
+      v-if="showCustomerSearch && selectedBerth && marinaId"
+      :berth-id="selectedBerth.id"
+      :marina-id="marinaId"
+      @close="showCustomerSearch = false"
+      @linked="onCustomerLinked"
+    />
 
     <!-- Mobile floating action button (Bewerken + Legenda) -->
     <div class="lg:hidden fixed bottom-20 right-4 z-[1200] flex flex-col items-end gap-2">

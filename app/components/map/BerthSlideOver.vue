@@ -211,33 +211,51 @@ function formatDateTime(d: string) {
           </div>
         </div>
 
-        <!-- Customer & Boat -->
+        <!-- Huurder & boot - één gecombineerde kaart -->
         <div class="px-5 py-4 border-b border-black/[0.08]">
-          <div v-if="berth.customer" class="mb-3">
-            <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1">
-              {{ isSublet ? 'Vaste ligger' : 'Huurder' }}
+          <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-2">
+            {{ isSublet ? 'Vaste ligger & boot' : 'Huurder & boot' }}
+          </div>
+          <div
+            v-if="berth.customer"
+            class="flex items-center gap-3"
+          >
+            <div class="w-12 h-12 rounded-[14px] bg-primary-500/10 text-primary-500 flex items-center justify-center shrink-0">
+              <UIcon name="i-lucide-sailboat" class="size-6" />
             </div>
-            <div class="text-sm font-semibold text-[#0A1520]">{{ berth.customer.name }}</div>
-            <div v-if="berth.customer.contractType" class="text-xs text-[#5A6A78] mt-0.5">
-              {{ berth.customer.contractType === 'YEAR' ? 'Jaarcontract' : berth.customer.contractType === 'SUMMER' ? 'Seizoencontract' : 'Tijdelijk' }}
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-[#0A1520] truncate">{{ berth.customer.name }}</div>
+              <div class="text-xs text-[#5A6A78] truncate">
+                <template v-if="berth.boat">
+                  {{ berth.boat.name }}<span v-if="berth.boat.length"> · {{ berth.boat.length }}m</span><span v-if="berth.boat.type"> · {{ berth.boat.type }}</span>
+                </template>
+                <template v-else>
+                  Geen boot gekoppeld
+                </template>
+              </div>
+              <div
+                v-if="berth.customer.contractType"
+                class="text-[10px] text-[#5A6A78] mt-0.5"
+              >
+                {{ berth.customer.contractType === 'YEAR' ? 'Jaarcontract' : berth.customer.contractType === 'SUMMER' ? 'Seizoencontract' : 'Tijdelijk' }}
+              </div>
             </div>
+            <button
+              class="text-[11px] text-[#5A6A78] hover:text-[#0A1520] underline-offset-2 hover:underline shrink-0"
+              title="Klant van deze plek halen"
+              @click="emit('linkCustomer')"
+            >
+              Wissel
+            </button>
           </div>
-          <div v-else class="mb-3">
-            <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1">Huurder</div>
-            <div class="text-sm text-[#5A6A78] italic">Geen huurder gekoppeld</div>
-          </div>
-
-          <div v-if="berth.boat">
-            <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1">Boot</div>
-            <div class="text-sm font-semibold text-[#0A1520]">{{ berth.boat.name }}</div>
-            <div class="text-xs text-[#5A6A78] mt-0.5">
-              {{ berth.boat.type || 'Onbekend type' }} · {{ berth.boat.length }}m
-            </div>
-          </div>
-          <div v-else>
-            <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-1">Boot</div>
-            <div class="text-sm text-[#5A6A78] italic">Geen boot gekoppeld</div>
-          </div>
+          <button
+            v-else
+            class="w-full inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-[10px] bg-[#F4F7F8] text-[#5A6A78] text-sm font-semibold hover:bg-black/5 border border-dashed border-black/[0.12]"
+            @click="emit('linkCustomer')"
+          >
+            <UIcon name="i-lucide-user-plus" class="size-4" />
+            Klant + boot koppelen
+          </button>
         </div>
 
         <!-- Type wijzigen -->
@@ -359,18 +377,13 @@ function formatDateTime(d: string) {
             {{ checkingOut ? 'Bezig...' : 'Check-out' }}
           </button>
         </div>
-        <div class="flex gap-2">
-          <NuxtLink
-            :to="`/dashboard/bookings?berthId=${berth.id}`"
-            class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-full bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600"
-          >
-            <UIcon name="i-lucide-calendar-plus" class="size-3.5" />
-            {{ berth.customer && !isPassant ? 'Tijdelijk verhuren' : '+ Boeking' }}
-          </NuxtLink>
-          <UButton color="neutral" variant="outline" class="rounded-full flex-1" size="sm" @click="emit('linkCustomer')">
-            Klant koppelen
-          </UButton>
-        </div>
+        <NuxtLink
+          :to="`/dashboard/bookings?berthId=${berth.id}`"
+          class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-full bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600"
+        >
+          <UIcon name="i-lucide-calendar-plus" class="size-3.5" />
+          {{ berth.customer && !isPassant ? 'Tijdelijk verhuren' : '+ Boeking' }}
+        </NuxtLink>
       </div>
     </div>
   </Transition>
