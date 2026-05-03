@@ -46,9 +46,9 @@ const lastUpdated = '3 mei 2026'
           Verwerkingsverantwoordelijke voor de verwerking van persoonsgegevens via deze applicatie is
           Nautar. Voor vragen over privacy kun je contact opnemen via
           <a
-            href="mailto:privacy@nautar.app"
+            href="mailto:privacy@nautar.nl"
             class="text-primary-600 hover:text-primary-700 underline"
-          >privacy@nautar.app</a>.
+          >privacy@nautar.nl</a>.
         </p>
 
         <h2 class="text-xl font-semibold text-[#0A1520] mt-8 mb-3">
@@ -131,9 +131,9 @@ const lastUpdated = '3 mei 2026'
           Je hebt het recht op inzage, correctie, verwijdering, beperking, bezwaar en dataportabiliteit
           van je persoonsgegevens. Stuur een verzoek naar
           <a
-            href="mailto:privacy@nautar.app"
+            href="mailto:privacy@nautar.nl"
             class="text-primary-600 hover:text-primary-700 underline"
-          >privacy@nautar.app</a>.
+          >privacy@nautar.nl</a>.
           Je hebt ook het recht een klacht in te dienen bij de Autoriteit Persoonsgegevens.
         </p>
 

@@ -74,7 +74,7 @@ export function welcomeEmail(firstName: string, marinaName: string): { subject: 
           Daarna kun je huurders importeren en je boekhouding koppelen.
         </p>
         <p style="margin:24px 0;">
-          <a href="${useRuntimeConfig().appUrl || 'https://nautar.app'}/dashboard" style="display:inline-block;padding:12px 20px;background:#00A9A5;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;">
+          <a href="${useRuntimeConfig().appUrl || 'https://nautar.nl'}/dashboard" style="display:inline-block;padding:12px 20px;background:#00A9A5;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;">
             Ga naar je dashboard
           </a>
         </p>

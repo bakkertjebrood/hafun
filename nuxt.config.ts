@@ -21,6 +21,8 @@ export default defineNuxtConfig({
         { name: 'theme-color', content: '#00A9A5' }
       ],
       link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+        { rel: 'mask-icon', href: '/favicon.svg', color: '#00A9A5' },
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
         {
@@ -45,7 +47,7 @@ export default defineNuxtConfig({
     googleClientId: process.env.GOOGLE_CLIENT_ID || '',
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     postmarkApiKey: process.env.POSTMARK_API_KEY || '',
-    emailFrom: process.env.EMAIL_FROM || 'no-reply@nautar.app',
+    emailFrom: process.env.EMAIL_FROM || 'no-reply@nautar.nl',
     appUrl: process.env.APP_URL || '',
     public: {
       googleEnabled: !!process.env.GOOGLE_CLIENT_ID

@@ -57,7 +57,7 @@ const lastUpdated = '3 mei 2026'
           Nieuwe Klanten krijgen een gratis proefperiode van 30 dagen. Daarna gaat het abonnement
           automatisch over in een betaald abonnement, tenzij de Klant voor afloop opzegt. Het abonnement
           wordt maandelijks gefactureerd op basis van het op dat moment geldende tarief, dat is
-          gepubliceerd op nautar.app.
+          gepubliceerd op nautar.nl.
         </p>
 
         <h2 class="text-xl font-semibold text-[#0A1520] mt-8 mb-3">
