@@ -280,7 +280,24 @@ function initMap() {
   mapInstance.on('click', onMapClick)
   mapInstance.on('dblclick', onMapDblClick)
   mapInstance.on('mousemove', onMapMouseMove)
+  mapInstance.on('zoomend', onZoomChanged)
 
+  addBerthMarkers()
+}
+
+// Houdt bij of we ons net boven of onder een drempel bevonden zodat we
+// alleen hertekenen wanneer het zichtbare label-gedrag echt verandert.
+let lastLabelZoomBucket: 'hidden' | 'short' | 'full' | null = null
+function zoomBucket(zoom: number): 'hidden' | 'short' | 'full' {
+  if (zoom < ZOOM_LABEL_MIN) return 'hidden'
+  if (zoom < ZOOM_LABEL_FULL) return 'short'
+  return 'full'
+}
+function onZoomChanged() {
+  if (!mapInstance) return
+  const bucket = zoomBucket(mapInstance.getZoom())
+  if (bucket === lastLabelZoomBucket) return
+  lastLabelZoomBucket = bucket
   addBerthMarkers()
 }
 
@@ -830,12 +847,15 @@ function addBerthMarkers() {
 
     const borderColor = isEdit ? sideColor : 'white'
     const typeLabel = statusLabels[berth.type] || berth.type || ''
-    const tooltip = `${berth.code} — ${typeLabel} (${statusLabels[status] || status})`
+    const fullLabel = berthDisplayLabel(berth)
+    const tooltipExtra = fullLabel && fullLabel !== berth.code ? ` · ${fullLabel}` : ''
+    const tooltip = `${berth.code} — ${typeLabel}${tooltipExtra} (${statusLabels[status] || status})`
 
-    const labelText = berthDisplayLabel(berth)
-    const pillOffset = Math.ceil(Math.max(w, h) / 2 + 5)
+    const labelText = effectiveLabelText(berth)
+    const pillDistance = Math.max(w, h) / 2 + 8
+    const pillOffset = pillScreenOffset(pier, berth.side || null, pillDistance)
     const pillHtml = labelText
-      ? `<div class="berth-label-pill" style="top: calc(50% + ${pillOffset}px);">${escapeHtml(labelText)}</div>`
+      ? `<div class="berth-label-pill" style="left: calc(50% + ${pillOffset.x.toFixed(1)}px); top: calc(50% + ${pillOffset.y.toFixed(1)}px);">${escapeHtml(labelText)}</div>`
       : ''
 
     const html = `
@@ -919,6 +939,34 @@ function berthDisplayLabel(berth: any): string {
     case 'code':
     default: return berthShortCode(berth.code)
   }
+}
+
+// Zoom-afhankelijk: bij ver uitgezoomd niets, bij midden alleen korte velden,
+// bij ver ingezoomd het volledige gekozen veld.
+const ZOOM_LABEL_MIN = 17
+const ZOOM_LABEL_FULL = 18
+function effectiveLabelText(berth: any): string {
+  if (labelMode.value === 'none') return ''
+  const zoom = mapInstance?.getZoom() ?? ZOOM_LABEL_FULL
+  if (zoom < ZOOM_LABEL_MIN) return ''
+  const isLongField = labelMode.value === 'boat' || labelMode.value === 'customer'
+  if (isLongField && zoom < ZOOM_LABEL_FULL) return berthShortCode(berth.code)
+  return berthDisplayLabel(berth)
+}
+
+// Bereken pixel-offset om het label aan de buitenkant van de steiger te
+// plaatsen (LEFT-zijde naar links/boven, RIGHT naar rechts/onder, HEAD in
+// de richting waar de steiger eindigt).
+function pillScreenOffset(pier: any, side: string | null, distance: number): { x: number, y: number } {
+  if (!pier) return { x: 0, y: distance }
+  const beta = pierBearing(pier)
+  let direction: number
+  if (side === 'LEFT') direction = (beta - 90 + 360) % 360
+  else if (side === 'RIGHT') direction = (beta + 90) % 360
+  else if (side === 'HEAD') direction = beta % 360
+  else direction = (beta + 90) % 360
+  const rad = direction * Math.PI / 180
+  return { x: Math.sin(rad) * distance, y: -Math.cos(rad) * distance }
 }
 
 async function flipBerthSide(berth: any) {
@@ -2521,8 +2569,7 @@ async function deleteFacility(f: any) {
 }
 .berth-label-pill {
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   background: rgba(255, 255, 255, 0.96);
   color: #0A1520;
   font-size: 11px;
@@ -2533,7 +2580,7 @@ async function deleteFacility(f: any) {
   border: 1px solid rgba(10, 21, 32, 0.12);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   white-space: nowrap;
-  max-width: 180px;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
