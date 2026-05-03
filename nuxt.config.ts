@@ -41,7 +41,15 @@ export default defineNuxtConfig({
   runtimeConfig: {
     jwtSecret: process.env.JWT_SECRET || 'nautar-dev-secret-change-in-production',
     databaseUrl: process.env.DATABASE_URL || '',
-    claudeApiKey: process.env.CLAUDE_API_KEY || ''
+    claudeApiKey: process.env.CLAUDE_API_KEY || '',
+    googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+    googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    postmarkApiKey: process.env.POSTMARK_API_KEY || '',
+    emailFrom: process.env.EMAIL_FROM || 'no-reply@nautar.app',
+    appUrl: process.env.APP_URL || '',
+    public: {
+      googleEnabled: !!process.env.GOOGLE_CLIENT_ID
+    }
   },
 
   compatibilityDate: '2025-01-15',

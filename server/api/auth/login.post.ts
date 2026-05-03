@@ -18,6 +18,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, message: 'Ongeldige inloggegevens' })
   }
 
+  if (!user.passwordHash) {
+    throw createError({ statusCode: 401, message: 'Dit account gebruikt Google login' })
+  }
+
   const valid = await bcrypt.compare(body.password, user.passwordHash)
   if (!valid) {
     throw createError({ statusCode: 401, message: 'Ongeldige inloggegevens' })
