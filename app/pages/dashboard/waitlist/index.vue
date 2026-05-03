@@ -6,6 +6,7 @@ const entries = ref<any[]>([])
 const showNew = ref(false)
 const statusFilter = ref<string>('waiting')
 const saving = ref(false)
+const { errorMessage, loadError, messageFor } = useFetchError()
 
 const newEntry = ref({
   name: '', email: '', phone: '', boatLength: '', boatWidth: '', boatType: '', preferredPier: '', notes: '', priority: 0
@@ -29,10 +30,18 @@ const statusColors: Record<string, string> = {
 
 async function fetchList() {
   loading.value = true
+  loadError.value = ''
   const q: Record<string, string> = {}
   if (statusFilter.value) q.status = statusFilter.value
-  entries.value = await $fetch('/api/waitlist', { query: q }) as any[]
-  loading.value = false
+  try {
+    entries.value = await $fetch('/api/waitlist', { query: q }) as any[]
+  }
+  catch (e) {
+    loadError.value = messageFor(e, 'Kon wachtlijst niet laden')
+  }
+  finally {
+    loading.value = false
+  }
 }
 
 onMounted(fetchList)
@@ -41,11 +50,15 @@ watch(statusFilter, fetchList)
 async function create() {
   if (!newEntry.value.name) return
   saving.value = true
+  errorMessage.value = ''
   try {
     await $fetch('/api/waitlist', { method: 'POST', body: newEntry.value })
     newEntry.value = { name: '', email: '', phone: '', boatLength: '', boatWidth: '', boatType: '', preferredPier: '', notes: '', priority: 0 }
     showNew.value = false
     await fetchList()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Aanmelding aanmaken mislukt')
   }
   finally {
     saving.value = false
@@ -53,14 +66,26 @@ async function create() {
 }
 
 async function updateStatus(id: string, status: string) {
-  await $fetch(`/api/waitlist/${id}`, { method: 'PUT', body: { status } })
-  await fetchList()
+  errorMessage.value = ''
+  try {
+    await $fetch(`/api/waitlist/${id}`, { method: 'PUT', body: { status } })
+    await fetchList()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Status bijwerken mislukt')
+  }
 }
 
 async function remove(id: string) {
   if (!confirm('Verwijderen?')) return
-  await $fetch(`/api/waitlist/${id}`, { method: 'DELETE' })
-  await fetchList()
+  errorMessage.value = ''
+  try {
+    await $fetch(`/api/waitlist/${id}`, { method: 'DELETE' })
+    await fetchList()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Verwijderen mislukt')
+  }
 }
 
 function formatDate(d: string) {
@@ -78,6 +103,18 @@ function formatDate(d: string) {
       <UButton color="primary" class="rounded-full" size="sm" @click="showNew = !showNew">
         + Nieuwe aanmelding
       </UButton>
+    </div>
+
+    <!-- Errors -->
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="fetchList()">Opnieuw laden</button>
+    </div>
+    <div v-if="errorMessage" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ errorMessage }}</div>
+      <button class="text-xs text-red-700 underline" @click="errorMessage = ''">Sluiten</button>
     </div>
 
     <!-- Status filter -->

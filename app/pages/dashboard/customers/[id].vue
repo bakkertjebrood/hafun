@@ -4,6 +4,7 @@ definePageMeta({ layout: 'dashboard' })
 const route = useRoute()
 const customer = ref<any>(null)
 const loading = ref(true)
+const { loadError, messageFor } = useFetchError()
 
 const contractLabels: Record<string, string> = {
   YEAR: 'Jaarcontract',
@@ -18,10 +19,21 @@ const statusColors: Record<string, string> = {
   cancelled: '#9CA3AF'
 }
 
-onMounted(async () => {
-  customer.value = await $fetch(`/api/customers/${route.params.id}`)
-  loading.value = false
-})
+async function load() {
+  loading.value = true
+  loadError.value = ''
+  try {
+    customer.value = await $fetch(`/api/customers/${route.params.id}`)
+  }
+  catch (e) {
+    loadError.value = messageFor(e, 'Kon klantgegevens niet laden')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+onMounted(load)
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -34,6 +46,12 @@ function formatCurrency(amount: number) {
 
 <template>
   <div class="p-4 lg:p-7 max-w-[1200px]">
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="load()">Opnieuw laden</button>
+    </div>
+
     <div v-if="loading" class="text-sm text-[#5A6A78]">Laden...</div>
     <template v-else-if="customer">
       <!-- Back + Header -->

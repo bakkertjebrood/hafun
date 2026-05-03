@@ -8,6 +8,7 @@ const transactions = ref<any[]>([])
 const cart = ref<Array<{ productId: string; name: string; quantity: number; unitPrice: number; vatRate: number }>>([])
 const method = ref<'cash' | 'pin' | 'creditcard' | 'invoice' | 'online'>('pin')
 const saving = ref(false)
+const { errorMessage, loadError, messageFor } = useFetchError()
 
 // Nieuw product
 const showNewProduct = ref(false)
@@ -20,10 +21,16 @@ async function fetchTransactions() {
   transactions.value = await $fetch('/api/pos/transactions') as any[]
 }
 
-onMounted(async () => {
-  await Promise.all([fetchProducts(), fetchTransactions()])
+async function load() {
+  loading.value = true
+  loadError.value = ''
+  const results = await Promise.allSettled([fetchProducts(), fetchTransactions()])
+  const failed = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
+  if (failed) loadError.value = messageFor(failed.reason, 'Kon kassa niet laden')
   loading.value = false
-})
+}
+
+onMounted(load)
 
 const categories = computed(() => {
   const s = new Set<string>()
@@ -50,10 +57,14 @@ const cartVat = computed(() => cartTotal.value - cartSubtotal.value)
 async function checkout() {
   if (!cart.value.length) return
   saving.value = true
+  errorMessage.value = ''
   try {
     await $fetch('/api/pos/transactions', { method: 'POST', body: { lines: cart.value, method: method.value } })
     clearCart()
     await Promise.all([fetchProducts(), fetchTransactions()])
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Afrekenen mislukt')
   }
   finally {
     saving.value = false
@@ -62,16 +73,28 @@ async function checkout() {
 
 async function createProduct() {
   if (!newProduct.value.name || !newProduct.value.price) return
-  await $fetch('/api/pos/products', { method: 'POST', body: newProduct.value })
-  newProduct.value = { name: '', category: '', price: 0, vatRate: 21, stock: null, barcode: '' }
-  showNewProduct.value = false
-  await fetchProducts()
+  errorMessage.value = ''
+  try {
+    await $fetch('/api/pos/products', { method: 'POST', body: newProduct.value })
+    newProduct.value = { name: '', category: '', price: 0, vatRate: 21, stock: null, barcode: '' }
+    showNewProduct.value = false
+    await fetchProducts()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Product aanmaken mislukt')
+  }
 }
 
 async function removeProduct(id: string) {
   if (!confirm('Product deactiveren?')) return
-  await $fetch(`/api/pos/products/${id}`, { method: 'DELETE' })
-  await fetchProducts()
+  errorMessage.value = ''
+  try {
+    await $fetch(`/api/pos/products/${id}`, { method: 'DELETE' })
+    await fetchProducts()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Verwijderen mislukt')
+  }
 }
 
 function formatCurrency(n: number) {
@@ -95,6 +118,17 @@ const methodLabels: Record<string, string> = {
         <button class="px-4 py-1.5 text-xs font-medium" :class="tab === 'products' ? 'bg-primary-500 text-white' : 'text-[#5A6A78]'" @click="tab = 'products'">Producten</button>
         <button class="px-4 py-1.5 text-xs font-medium" :class="tab === 'transactions' ? 'bg-primary-500 text-white' : 'text-[#5A6A78]'" @click="tab = 'transactions'">Transacties</button>
       </div>
+    </div>
+
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="load()">Opnieuw laden</button>
+    </div>
+    <div v-if="errorMessage" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ errorMessage }}</div>
+      <button class="text-xs text-red-700 underline" @click="errorMessage = ''">Sluiten</button>
     </div>
 
     <div v-if="loading" class="text-sm text-[#5A6A78]">Laden...</div>

@@ -8,6 +8,7 @@ const marinaId = ref('')
 const showNew = ref(false)
 const saving = ref(false)
 const statusFilter = ref<string>('')
+const { errorMessage, loadError, messageFor } = useFetchError()
 
 const newQuote = ref({
   customerId: '',
@@ -26,10 +27,18 @@ const statusColors: Record<string, string> = {
 
 async function fetchQuotes() {
   loading.value = true
+  loadError.value = ''
   const q: Record<string, string> = {}
   if (statusFilter.value) q.status = statusFilter.value
-  quotes.value = await $fetch('/api/quotes', { query: q }) as any[]
-  loading.value = false
+  try {
+    quotes.value = await $fetch('/api/quotes', { query: q }) as any[]
+  }
+  catch (e) {
+    loadError.value = messageFor(e, 'Kon offertes niet laden')
+  }
+  finally {
+    loading.value = false
+  }
 }
 
 async function fetchCustomers() {
@@ -39,7 +48,9 @@ async function fetchCustomers() {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchQuotes(), fetchCustomers()])
+  const results = await Promise.allSettled([fetchQuotes(), fetchCustomers()])
+  const failed = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
+  if (failed && !loadError.value) loadError.value = messageFor(failed.reason, 'Kon klantgegevens niet laden')
 })
 watch(statusFilter, fetchQuotes)
 
@@ -57,11 +68,15 @@ const quoteTotal = computed(() => newQuote.value.lines.reduce(
 async function create() {
   if (!newQuote.value.title) return
   saving.value = true
+  errorMessage.value = ''
   try {
     await $fetch('/api/quotes', { method: 'POST', body: newQuote.value })
     newQuote.value = { customerId: '', title: '', description: '', validUntil: '', lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 21 }] }
     showNew.value = false
     await fetchQuotes()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Offerte aanmaken mislukt')
   }
   finally {
     saving.value = false
@@ -69,14 +84,26 @@ async function create() {
 }
 
 async function updateStatus(id: string, status: string) {
-  await $fetch(`/api/quotes/${id}`, { method: 'PUT', body: { status } })
-  await fetchQuotes()
+  errorMessage.value = ''
+  try {
+    await $fetch(`/api/quotes/${id}`, { method: 'PUT', body: { status } })
+    await fetchQuotes()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Status bijwerken mislukt')
+  }
 }
 
 async function remove(id: string) {
   if (!confirm('Verwijderen?')) return
-  await $fetch(`/api/quotes/${id}`, { method: 'DELETE' })
-  await fetchQuotes()
+  errorMessage.value = ''
+  try {
+    await $fetch(`/api/quotes/${id}`, { method: 'DELETE' })
+    await fetchQuotes()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Verwijderen mislukt')
+  }
 }
 
 function formatCurrency(n: number) {
@@ -95,6 +122,18 @@ function formatDate(d: string) {
         <div class="text-xs text-[#5A6A78] mt-0.5">{{ quotes.length }} offertes</div>
       </div>
       <UButton color="primary" class="rounded-full" size="sm" @click="showNew = !showNew">+ Nieuwe offerte</UButton>
+    </div>
+
+    <!-- Errors -->
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="fetchQuotes()">Opnieuw laden</button>
+    </div>
+    <div v-if="errorMessage" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ errorMessage }}</div>
+      <button class="text-xs text-red-700 underline" @click="errorMessage = ''">Sluiten</button>
     </div>
 
     <!-- Filter -->

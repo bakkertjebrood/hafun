@@ -141,27 +141,36 @@ export default defineEventHandler(async (event) => {
   }
 
   // ─── Occupancy chart (14 days) ───────
+  // Fetch all bookings in the 14-day window once, then count overlaps in JS
+  // (avoids 14 sequential count() round-trips).
+
+  const chartStart = new Date(today)
+  chartStart.setDate(chartStart.getDate() - 7)
+  const chartEnd = new Date(today)
+  chartEnd.setDate(chartEnd.getDate() + 7)
+
+  const chartBookings = await prisma.booking.findMany({
+    where: {
+      marinaId,
+      status: { not: 'cancelled' },
+      dateFrom: { lt: chartEnd },
+      dateTo: { gt: chartStart }
+    },
+    select: { dateFrom: true, dateTo: true }
+  })
 
   const occupancyData: number[] = []
   for (let i = 0; i < 14; i++) {
-    const date = new Date(today)
-    date.setDate(date.getDate() - 7 + i)
+    const date = new Date(chartStart)
+    date.setDate(date.getDate() + i)
     const nextDate = new Date(date)
     nextDate.setDate(nextDate.getDate() + 1)
 
-    // Count bookings active on this date
-    const activeBookings = await prisma.booking.count({
-      where: {
-        marinaId,
-        status: { not: 'cancelled' },
-        dateFrom: { lte: nextDate },
-        dateTo: { gte: date }
-      }
-    })
+    const activeBookings = chartBookings.filter(b =>
+      b.dateFrom < nextDate && b.dateTo > date
+    ).length
 
-    // Add permanent occupants (berths with status OCCUPIED/SEASONAL)
-    const permanentOccupied = occupiedBerths
-    const totalActive = Math.min(activeBookings + permanentOccupied, totalBerths)
+    const totalActive = Math.min(activeBookings + occupiedBerths, totalBerths)
     const pct = totalBerths > 0 ? Math.round((totalActive / totalBerths) * 100) : 0
     occupancyData.push(Math.min(pct, 100))
   }

@@ -5,9 +5,11 @@ const loading = ref(true)
 const logs = ref<any[]>([])
 const entityFilter = ref('')
 const actionFilter = ref('')
+const { loadError, messageFor } = useFetchError()
 
 async function fetchLogs() {
   loading.value = true
+  loadError.value = ''
   const q: Record<string, string> = { limit: '200' }
   if (entityFilter.value) q.entity = entityFilter.value
   if (actionFilter.value) q.action = actionFilter.value
@@ -15,9 +17,14 @@ async function fetchLogs() {
     logs.value = await $fetch('/api/audit', { query: q }) as any[]
   }
   catch (e: any) {
-    if (e.statusCode === 403) logs.value = []
+    logs.value = []
+    if (e?.statusCode !== 403) {
+      loadError.value = messageFor(e, 'Kon mutatielog niet laden')
+    }
   }
-  loading.value = false
+  finally {
+    loading.value = false
+  }
 }
 
 onMounted(fetchLogs)
@@ -68,6 +75,12 @@ function userLabel(u: any) {
         <option value="delete">Verwijderd</option>
         <option value="reminder">Herinnering</option>
       </select>
+    </div>
+
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="fetchLogs()">Opnieuw laden</button>
     </div>
 
     <div v-if="loading" class="text-sm text-[#5A6A78]">Laden...</div>

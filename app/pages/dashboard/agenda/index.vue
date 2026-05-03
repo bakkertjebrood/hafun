@@ -8,6 +8,7 @@ const loading = ref(true)
 const events = ref<any[]>([])
 const showNew = ref(false)
 const saving = ref(false)
+const { errorMessage, loadError, messageFor } = useFetchError()
 
 const newEvent = ref({
   title: '',
@@ -60,10 +61,18 @@ const range = computed(() => {
 
 async function fetchEvents() {
   loading.value = true
-  events.value = await $fetch('/api/agenda', {
-    query: { from: range.value.from.toISOString(), to: range.value.to.toISOString() }
-  }) as any[]
-  loading.value = false
+  loadError.value = ''
+  try {
+    events.value = await $fetch('/api/agenda', {
+      query: { from: range.value.from.toISOString(), to: range.value.to.toISOString() }
+    }) as any[]
+  }
+  catch (e) {
+    loadError.value = messageFor(e, 'Kon agenda niet laden')
+  }
+  finally {
+    loading.value = false
+  }
 }
 
 onMounted(fetchEvents)
@@ -116,11 +125,15 @@ const headerLabel = computed(() => {
 async function createEvent() {
   if (!newEvent.value.title || !newEvent.value.startAt) return
   saving.value = true
+  errorMessage.value = ''
   try {
     await $fetch('/api/agenda', { method: 'POST', body: newEvent.value })
     newEvent.value = { title: '', description: '', type: 'OTHER', startAt: '', endAt: '', allDay: false, location: '' }
     showNew.value = false
     await fetchEvents()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Opslaan mislukt')
   }
   finally {
     saving.value = false
@@ -129,8 +142,14 @@ async function createEvent() {
 
 async function remove(id: string) {
   if (!confirm('Verwijderen?')) return
-  await $fetch(`/api/agenda/${id}`, { method: 'DELETE' })
-  await fetchEvents()
+  errorMessage.value = ''
+  try {
+    await $fetch(`/api/agenda/${id}`, { method: 'DELETE' })
+    await fetchEvents()
+  }
+  catch (e) {
+    errorMessage.value = messageFor(e, 'Verwijderen mislukt')
+  }
 }
 </script>
 
@@ -158,6 +177,18 @@ async function remove(id: string) {
         <UButton color="neutral" variant="outline" size="sm" @click="shift(1)">›</UButton>
         <UButton color="primary" class="rounded-full" size="sm" @click="showNew = !showNew">+ Nieuw</UButton>
       </div>
+    </div>
+
+    <!-- Errors -->
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="fetchEvents()">Opnieuw laden</button>
+    </div>
+    <div v-if="errorMessage" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ errorMessage }}</div>
+      <button class="text-xs text-red-700 underline" @click="errorMessage = ''">Sluiten</button>
     </div>
 
     <!-- Nieuw event -->
