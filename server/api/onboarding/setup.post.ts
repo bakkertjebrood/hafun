@@ -6,6 +6,7 @@ interface BerthSpec {
   width?: number
   count: number
   isPassanten?: boolean
+  side?: 'LEFT' | 'RIGHT' | 'HEAD'
 }
 
 interface PierSpec {
@@ -82,27 +83,37 @@ export default defineEventHandler(async (event) => {
         length: number
         width: number
         isPassanten: boolean
+        side: string | null
       }[] = []
 
       const existingCount = await tx.berth.count({ where: { marinaId, pier: pierName } })
       let seq = existingCount
+      let headSeq = 0
 
       for (const spec of pier.berths || []) {
         const count = Math.min(Math.max(Math.floor(spec.count || 0), 0), 200)
         const length = Math.max(Math.min(spec.length || 10, 60), 2)
         const width = Math.max(Math.min(spec.width || 3, 20), 1)
         const passanten = spec.isPassanten ?? pier.allPassanten ?? false
+        const side = spec.side === 'LEFT' || spec.side === 'RIGHT' || spec.side === 'HEAD' ? spec.side : null
 
         for (let i = 0; i < count; i++) {
-          seq += 1
-          const code = `${pierName}${String(seq).padStart(2, '0')}-${length}m`
+          let code: string
+          if (side === 'HEAD') {
+            headSeq += 1
+            code = `${pierName}-KOP-${headSeq}`
+          } else {
+            seq += 1
+            code = `${pierName}${String(seq).padStart(2, '0')}-${length}m`
+          }
           berthData.push({
             marinaId,
             code,
             pier: pierName,
             length,
             width,
-            isPassanten: passanten
+            isPassanten: passanten,
+            side
           })
         }
       }

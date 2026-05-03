@@ -292,16 +292,18 @@ function renderVertexHandles() {
 
 function createVertexHandle(point: number[], pier: any, kind: 'main' | 'head', idx: number) {
   const color = kind === 'main' ? '#00A9A5' : '#F59E0B'
+  const isCoarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
+  const size = isCoarse ? 28 : 18
   const icon = L.divIcon({
     className: 'pier-vertex',
     html: `<div style="
-      width: 16px; height: 16px; background: white;
+      width: ${size}px; height: ${size}px; background: white;
       border: 3px solid ${color}; border-radius: 50%;
       box-shadow: 0 1px 4px rgba(0,0,0,0.35);
       cursor: grab;
     "></div>`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8]
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2]
   })
   const marker = L.marker(point, { icon, draggable: true, zIndexOffset: 1000 }).addTo(mapInstance)
 
@@ -370,6 +372,10 @@ function startDrawPier(name: string) {
 }
 
 function onMapClick(e: any) {
+  if (aiTapMode.value) {
+    addAiTapPoint([e.latlng.lat, e.latlng.lng])
+    return
+  }
   if (placingFacilityType.value) {
     const type = placingFacilityType.value
     placeFacilityAt(type, e.latlng.lat, e.latlng.lng)
@@ -558,28 +564,78 @@ async function positionBerthsAlongPiers() {
 
 // ─── AI SATELLITE ANALYSE ──────────────────────
 
+interface AiReviewPier {
+  name: string
+  startLat: number
+  startLng: number
+  endLat: number
+  endLng: number
+  leftBerths: number
+  rightBerths: number
+  hasHead: boolean
+  headStartLat?: number
+  headStartLng?: number
+  headEndLat?: number
+  headEndLng?: number
+  headBerths: number
+  avgBerthLength: number
+  avgBerthWidth: number
+  confidence: number
+  lengthMeters?: number
+}
+
 const aiAnalyzing = ref(false)
 const aiResult = ref<any>(null)
 const showAiResult = ref(false)
+const aiReviewPiers = ref<AiReviewPier[]>([])
+const aiTapMode = ref(false)
+const aiTapPoints = ref<number[][]>([])
+const aiCounting = ref(false)
+const aiWarnings = ref<string[]>([])
+let aiPierLayers: Record<string, { line: any, headLine?: any, startMarker: any, endMarker: any, label: any }> = {}
+let aiTapPreview: any = null
+let aiTapVertexLayers: any[] = []
 
 async function runAiAnalysis() {
   if (!mapInstance) return
   aiAnalyzing.value = true
   error.value = null
+  disableAiTapMode()
 
   try {
+    // Wait briefly for any in-flight tile loads at the current zoom
+    await new Promise(r => setTimeout(r, 800))
+
     const html2canvas = (await import('html2canvas-pro')).default
-    const canvas = await html2canvas(mapInstance.getContainer(), {
-      useCORS: true, allowTaint: true, scale: 1
+    const dpr = window.devicePixelRatio || 1
+    const scale = Math.min(Math.max(dpr * 2, 2), 3)
+    const container: HTMLElement = mapInstance.getContainer()
+    const canvas = await html2canvas(container, {
+      useCORS: true,
+      allowTaint: true,
+      scale,
+      logging: false,
+      width: container.offsetWidth,
+      height: container.offsetHeight
     })
+
     const imageBase64 = canvas.toDataURL('image/png')
     const center = mapInstance.getCenter()
+    const b = mapInstance.getBounds()
     const marina = mapData.value?.marina
 
     const result = await $fetch('/api/onboarding/analyze', {
       method: 'POST',
       body: {
         imageBase64,
+        imageWidth: canvas.width,
+        imageHeight: canvas.height,
+        bounds: {
+          north: b.getNorth(),
+          south: b.getSouth(),
+          east: b.getEast(),
+          west: b.getWest()
+        },
         center: { lat: center.lat, lng: center.lng },
         zoom: mapInstance.getZoom(),
         marinaName: marina?.name || ''
@@ -587,7 +643,35 @@ async function runAiAnalysis() {
     })
 
     aiResult.value = result
+    const incoming: AiReviewPier[] = (result.piers || []).map(normalizeAiPier)
+    const renameNotes: string[] = []
+    // Auto-rename to avoid clobbering existing piers in this marina.
+    const used = new Set<string>(drawnPiers.value.map((p: any) => p.name as string))
+    for (const p of incoming) {
+      let candidate = p.name
+      let suffix = 1
+      while (used.has(candidate)) {
+        candidate = `${p.name}${suffix}`
+        suffix += 1
+      }
+      if (candidate !== p.name) {
+        renameNotes.push(`Steiger ${p.name} hernoemd naar ${candidate} (bestond al)`)
+        p.name = candidate
+      }
+      used.add(candidate)
+    }
+    aiReviewPiers.value = incoming
+    aiWarnings.value = [...(result.warnings || []), ...renameNotes]
+    drawAiReviewPiers()
     showAiResult.value = true
+    if (aiReviewPiers.value.length > 0) {
+      const allPoints: any[] = []
+      for (const p of aiReviewPiers.value) {
+        allPoints.push([p.startLat, p.startLng])
+        allPoints.push([p.endLat, p.endLng])
+      }
+      mapInstance.fitBounds(L.latLngBounds(allPoints).pad(0.15))
+    }
   } catch (e: any) {
     alert('AI analyse mislukt: ' + (e.data?.message || e.message))
   } finally {
@@ -595,12 +679,282 @@ async function runAiAnalysis() {
   }
 }
 
+function normalizeAiPier(p: any): AiReviewPier {
+  return {
+    name: String(p.name || '?'),
+    startLat: Number(p.startLat),
+    startLng: Number(p.startLng),
+    endLat: Number(p.endLat),
+    endLng: Number(p.endLng),
+    leftBerths: Number(p.leftBerths) || 0,
+    rightBerths: Number(p.rightBerths) || 0,
+    hasHead: !!p.hasHead,
+    headStartLat: typeof p.headStartLat === 'number' ? p.headStartLat : undefined,
+    headStartLng: typeof p.headStartLng === 'number' ? p.headStartLng : undefined,
+    headEndLat: typeof p.headEndLat === 'number' ? p.headEndLat : undefined,
+    headEndLng: typeof p.headEndLng === 'number' ? p.headEndLng : undefined,
+    headBerths: Number(p.headBerths) || 0,
+    avgBerthLength: Number(p.avgBerthLength) || 10,
+    avgBerthWidth: Number(p.avgBerthWidth) || 3.5,
+    confidence: Number(p.confidence) || 0.7,
+    lengthMeters: typeof p.lengthMeters === 'number' ? p.lengthMeters : undefined
+  }
+}
+
+function aiPierColor(p: AiReviewPier): string {
+  if (p.confidence >= 0.85) return '#10B981'
+  if (p.confidence >= 0.6) return '#F59E0B'
+  return '#EF4444'
+}
+
+function clearAiPierLayers() {
+  for (const k of Object.keys(aiPierLayers)) {
+    const layer = aiPierLayers[k]!
+    layer.line.remove()
+    if (layer.headLine) layer.headLine.remove()
+    layer.startMarker.remove()
+    layer.endMarker.remove()
+    layer.label.remove()
+  }
+  aiPierLayers = {}
+}
+
+function clearAiTapPreview() {
+  if (aiTapPreview) {
+    aiTapPreview.remove()
+    aiTapPreview = null
+  }
+  for (const v of aiTapVertexLayers) v.remove()
+  aiTapVertexLayers = []
+}
+
+function drawAiReviewPiers() {
+  if (!mapInstance || !L) return
+  clearAiPierLayers()
+  for (const p of aiReviewPiers.value) drawAiReviewPier(p)
+}
+
+function drawAiReviewPier(p: AiReviewPier) {
+  const color = aiPierColor(p)
+  const line = L.polyline(
+    [[p.startLat, p.startLng], [p.endLat, p.endLng]],
+    { color, weight: 5, opacity: 0.9, dashArray: '8, 6' }
+  ).addTo(mapInstance)
+
+  let headLine: any
+  if (p.hasHead && p.headStartLat != null && p.headEndLat != null) {
+    headLine = L.polyline(
+      [[p.headStartLat, p.headStartLng!], [p.headEndLat, p.headEndLng!]],
+      { color, weight: 4, opacity: 0.9, dashArray: '4, 6' }
+    ).addTo(mapInstance)
+  }
+
+  const start = makeAiEndpointMarker(p.startLat, p.startLng, color)
+  const end = makeAiEndpointMarker(p.endLat, p.endLng, color)
+
+  start.on('drag', (e: any) => {
+    const ll = e.target.getLatLng()
+    p.startLat = ll.lat
+    p.startLng = ll.lng
+    line.setLatLngs([[p.startLat, p.startLng], [p.endLat, p.endLng]])
+    aiPierLayers[p.name]?.label.setLatLng([(p.startLat + p.endLat) / 2, (p.startLng + p.endLng) / 2])
+  })
+  end.on('drag', (e: any) => {
+    const ll = e.target.getLatLng()
+    p.endLat = ll.lat
+    p.endLng = ll.lng
+    line.setLatLngs([[p.startLat, p.startLng], [p.endLat, p.endLng]])
+    aiPierLayers[p.name]?.label.setLatLng([(p.startLat + p.endLat) / 2, (p.startLng + p.endLng) / 2])
+  })
+
+  const label = L.marker([(p.startLat + p.endLat) / 2, (p.startLng + p.endLng) / 2], {
+    icon: L.divIcon({
+      className: 'pier-label',
+      html: `<div style="background:${color};color:white;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${p.name}</div>`,
+      iconSize: [30, 18],
+      iconAnchor: [15, 9]
+    }),
+    interactive: false
+  }).addTo(mapInstance)
+
+  aiPierLayers[p.name] = { line, headLine, startMarker: start, endMarker: end, label }
+}
+
+function makeAiEndpointMarker(lat: number, lng: number, color: string) {
+  const isCoarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
+  const size = isCoarse ? 28 : 20
+  const html = `<div style="
+    width:${size}px;height:${size}px;
+    background:white;border:3px solid ${color};border-radius:50%;
+    box-shadow:0 2px 6px rgba(0,0,0,0.35);
+  "></div>`
+  return L.marker([lat, lng], {
+    icon: L.divIcon({ className: 'pier-endpoint', html, iconSize: [size, size], iconAnchor: [size / 2, size / 2] }),
+    draggable: true,
+    zIndexOffset: 2000
+  }).addTo(mapInstance)
+}
+
+function nextAiPierName(): string {
+  const used = new Set([
+    ...aiReviewPiers.value.map(p => p.name),
+    ...drawnPiers.value.map((p: any) => p.name)
+  ])
+  for (let i = 0; i < 26; i++) {
+    const n = String.fromCharCode(65 + i)
+    if (!used.has(n)) return n
+  }
+  return `S${aiReviewPiers.value.length + 1}`
+}
+
+function updateAiPier(idx: number, next: AiReviewPier) {
+  aiReviewPiers.value[idx] = { ...next }
+}
+
+function removeAiPier(idx: number) {
+  const removed = aiReviewPiers.value.splice(idx, 1)[0]
+  if (removed && aiPierLayers[removed.name]) {
+    const l = aiPierLayers[removed.name]!
+    l.line.remove()
+    l.startMarker.remove()
+    l.endMarker.remove()
+    l.label.remove()
+    if (l.headLine) l.headLine.remove()
+    Reflect.deleteProperty(aiPierLayers, removed.name)
+  }
+}
+
+function renameAiPier(idx: number, newName: string) {
+  const p = aiReviewPiers.value[idx]
+  if (!p) return
+  if (aiReviewPiers.value.some((x, i) => i !== idx && x.name === newName)) {
+    alert(`Naam "${newName}" is al in gebruik`)
+    return
+  }
+  if (drawnPiers.value.some((x: any) => x.name === newName)) {
+    alert(`Steiger "${newName}" bestaat al op deze haven. Kies een andere letter.`)
+    return
+  }
+  const oldName = p.name
+  p.name = newName
+  if (aiPierLayers[oldName]) {
+    aiPierLayers[newName] = aiPierLayers[oldName]!
+    Reflect.deleteProperty(aiPierLayers, oldName)
+    aiPierLayers[newName].label.setIcon(L.divIcon({
+      className: 'pier-label',
+      html: `<div style="background:${aiPierColor(p)};color:white;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${newName}</div>`,
+      iconSize: [30, 18],
+      iconAnchor: [15, 9]
+    }))
+  }
+}
+
+function enableAiTapMode() {
+  aiTapMode.value = true
+  aiTapPoints.value = []
+  clearAiTapPreview()
+  if (mapInstance) mapInstance.getContainer().style.cursor = 'crosshair'
+}
+
+function disableAiTapMode() {
+  aiTapMode.value = false
+  aiTapPoints.value = []
+  clearAiTapPreview()
+  if (mapInstance) mapInstance.getContainer().style.cursor = ''
+}
+
+async function addAiTapPoint(p: number[]) {
+  aiTapPoints.value.push(p)
+  aiTapVertexLayers.push(
+    L.circleMarker(p, { radius: 7, fillColor: '#00A9A5', fillOpacity: 1, color: 'white', weight: 2 }).addTo(mapInstance)
+  )
+  if (aiTapPoints.value.length === 2) {
+    if (aiTapPreview) aiTapPreview.remove()
+    aiTapPreview = L.polyline(aiTapPoints.value, { color: '#00A9A5', weight: 4, dashArray: '6, 4' }).addTo(mapInstance)
+    await runAiTapCount()
+  }
+}
+
+async function runAiTapCount() {
+  if (aiTapPoints.value.length !== 2 || !mapInstance) return
+  aiCounting.value = true
+  try {
+    await new Promise(r => setTimeout(r, 600))
+    const html2canvas = (await import('html2canvas-pro')).default
+    const dpr = window.devicePixelRatio || 1
+    const scale = Math.min(Math.max(dpr * 2, 2), 3)
+    const container: HTMLElement = mapInstance.getContainer()
+    const canvas = await html2canvas(container, {
+      useCORS: true, allowTaint: true, scale, logging: false,
+      width: container.offsetWidth, height: container.offsetHeight
+    })
+    const imageBase64 = canvas.toDataURL('image/png')
+    const b = mapInstance.getBounds()
+    const start = aiTapPoints.value[0]!
+    const end = aiTapPoints.value[1]!
+
+    const result = await $fetch<{
+      leftBerths: number, rightBerths: number, hasHead: boolean, headBerths: number
+      avgBerthLength: number, avgBerthWidth: number, confidence: number, lengthMeters: number
+    }>('/api/piers/count-berths-between', {
+      method: 'POST',
+      body: {
+        imageBase64,
+        bounds: { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() },
+        imageWidth: canvas.width,
+        imageHeight: canvas.height,
+        line: [start, end],
+        pierName: nextAiPierName()
+      }
+    })
+
+    const newPier: AiReviewPier = {
+      name: nextAiPierName(),
+      startLat: start[0]!,
+      startLng: start[1]!,
+      endLat: end[0]!,
+      endLng: end[1]!,
+      leftBerths: result.leftBerths,
+      rightBerths: result.rightBerths,
+      hasHead: result.hasHead,
+      headBerths: result.headBerths,
+      avgBerthLength: result.avgBerthLength,
+      avgBerthWidth: result.avgBerthWidth,
+      confidence: result.confidence,
+      lengthMeters: result.lengthMeters
+    }
+    aiReviewPiers.value.push(newPier)
+    drawAiReviewPier(newPier)
+    showAiResult.value = true
+  } catch (e: any) {
+    alert('Tellen mislukt: ' + (e.data?.message || e.message))
+  } finally {
+    aiCounting.value = false
+    aiTapPoints.value = []
+    clearAiTapPreview()
+  }
+}
+
+function startAiTapAdd() {
+  showAiResult.value = true
+  enableAiTapMode()
+}
+
+function cancelAiReview() {
+  clearAiPierLayers()
+  disableAiTapMode()
+  aiReviewPiers.value = []
+  aiResult.value = null
+  aiWarnings.value = []
+  showAiResult.value = false
+}
+
 async function applyAiResult() {
-  if (!aiResult.value?.piers?.length || !marinaId.value) return
+  if (!aiReviewPiers.value.length || !marinaId.value) return
   positioningLoading.value = true
 
   try {
-    for (const pier of aiResult.value.piers) {
+    for (const pier of aiReviewPiers.value) {
       if (!pier.startLat || !pier.endLat) continue
 
       // Create/update pier line
@@ -609,26 +963,43 @@ async function applyAiResult() {
         name: pier.name,
         points: [[pier.startLat, pier.startLng], [pier.endLat, pier.endLng]]
       }
-      if (pier.hasHead && pier.headStartLat) {
+      if (pier.hasHead && pier.headStartLat != null && pier.headEndLat != null) {
         body.headPoints = [[pier.headStartLat, pier.headStartLng], [pier.headEndLat, pier.headEndLng]]
       }
       await $fetch('/api/piers', { method: 'POST', body })
 
-      // Create berths if they don't exist for this pier
+      // Create berths if none exist yet for this pier.
+      // Skip if any berth already exists to avoid duplicating a manually-set-up pier.
       const existingBerths = (mapData.value?.berths || []).filter((b: any) => b.pier === pier.name)
-      const totalNeeded = (pier.leftBerths || 0) + (pier.rightBerths || 0)
-
-      if (existingBerths.length === 0 && totalNeeded > 0) {
-        await $fetch('/api/berths/bulk', {
-          method: 'POST',
-          body: {
-            marinaId: marinaId.value,
-            pier: pier.name,
-            count: totalNeeded,
-            length: pier.avgBerthLength || 10,
-            width: pier.avgBerthWidth || 3.5
-          }
-        })
+      if (existingBerths.length === 0) {
+        const length = pier.avgBerthLength || 10
+        const width = pier.avgBerthWidth || 3.5
+        if (pier.leftBerths > 0) {
+          await $fetch('/api/berths/bulk', {
+            method: 'POST',
+            body: { marinaId: marinaId.value, pier: pier.name, count: pier.leftBerths, length, width, side: 'LEFT' }
+          })
+        }
+        if (pier.rightBerths > 0) {
+          await $fetch('/api/berths/bulk', {
+            method: 'POST',
+            body: { marinaId: marinaId.value, pier: pier.name, count: pier.rightBerths, length, width, side: 'RIGHT' }
+          })
+        }
+        if (pier.hasHead && pier.headBerths > 0) {
+          await $fetch('/api/berths/bulk', {
+            method: 'POST',
+            body: {
+              marinaId: marinaId.value,
+              pier: pier.name,
+              count: pier.headBerths,
+              length,
+              width,
+              side: 'HEAD',
+              codePrefix: `${pier.name}-KOP`
+            }
+          })
+        }
       }
     }
 
@@ -643,7 +1014,7 @@ async function applyAiResult() {
     await refreshMapData()
     clearMarkers()
     addBerthMarkers()
-    showAiResult.value = false
+    cancelAiReview()
 
     if (markers.length > 0) {
       const group = L.featureGroup(markers)
@@ -687,8 +1058,10 @@ function addBerthMarkers() {
     const rot = pier ? (pierBearing(pier) + 90) : 0
 
     // Rectangle size: represent boat (long axis) perpendicular to pier
-    const w = isEdit ? 14 : 10 // beam (px)
-    const h = isEdit ? 28 : 20 // length (px)
+    const isCoarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
+    const touchBoost = isEdit && isCoarse ? 1.5 : 1
+    const w = Math.round((isEdit ? 14 : 10) * touchBoost) // beam (px)
+    const h = Math.round((isEdit ? 28 : 20) * touchBoost) // length (px)
 
     // Side badge color
     const sideColor = berth.side === 'LEFT'
@@ -1229,8 +1602,16 @@ async function runFacilitySuggest() {
   suggestLoading.value = true
   try {
     const html2canvas = (await import('html2canvas-pro')).default
-    const canvas = await html2canvas(mapInstance.getContainer(), {
-      useCORS: true, allowTaint: true, scale: 1
+    const dpr = window.devicePixelRatio || 1
+    const scale = Math.min(Math.max(dpr * 2, 2), 3)
+    const container: HTMLElement = mapInstance.getContainer()
+    const canvas = await html2canvas(container, {
+      useCORS: true,
+      allowTaint: true,
+      scale,
+      logging: false,
+      width: container.offsetWidth,
+      height: container.offsetHeight
     })
     const imageBase64 = canvas.toDataURL('image/png')
     const bounds = mapInstance.getBounds()
@@ -1347,16 +1728,16 @@ function rejectSuggestion(idx: number) {
           </button>
         </div>
 
-        <!-- Actions -->
+        <!-- Actions (desktop only — mobile uses FAB) -->
         <button
-          class="px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold transition-all shrink-0"
+          class="hidden lg:inline-flex px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold transition-all shrink-0"
           :class="editMode ? 'bg-primary-500 text-white' : 'bg-[#F4F7F8] text-[#5A6A78]'"
           @click="toggleEditMode"
         >
           {{ editMode ? 'Klaar' : 'Bewerken' }}
         </button>
         <button
-          class="px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] transition-all shrink-0 disabled:opacity-50"
+          class="hidden lg:inline-flex px-2.5 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] transition-all shrink-0 disabled:opacity-50"
           :disabled="aiAnalyzing"
           @click="runAiAnalysis"
         >
@@ -1376,11 +1757,13 @@ function rejectSuggestion(idx: number) {
             class="text-[10px] text-[#5A6A78] hover:text-[#0A1520] px-1"
             title="Datumfilter opheffen"
             @click="viewDate = ''"
-          >×</button>
+          >
+            ×
+          </button>
         </div>
 
         <button
-          class="px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0"
+          class="hidden lg:inline-flex px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0"
           :class="showLegend ? '!bg-primary-500/10 !text-primary-600' : ''"
           title="Legenda"
           @click="showLegend = !showLegend"
@@ -1391,10 +1774,13 @@ function rejectSuggestion(idx: number) {
         <NuxtLink
           to="/dashboard/map-tv"
           target="_blank"
-          class="px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0 inline-flex items-center gap-1"
+          class="hidden lg:inline-flex px-2 py-1 rounded-full text-[10px] lg:text-xs font-semibold bg-[#F4F7F8] text-[#5A6A78] shrink-0 items-center gap-1"
           title="TV-modus (fullscreen)"
         >
-          <UIcon name="i-lucide-tv" class="size-3" /> TV
+          <UIcon
+            name="i-lucide-tv"
+            class="size-3"
+          /> TV
         </NuxtLink>
 
         <!-- Status counts (hidden on small mobile) -->
@@ -1421,12 +1807,23 @@ function rejectSuggestion(idx: number) {
       class="absolute z-[500] top-20 right-4 bg-white/95 backdrop-blur-sm border border-black/[0.08] rounded-[12px] shadow-lg p-3 w-[200px]"
     >
       <div class="flex items-center justify-between mb-2">
-        <div class="text-[11px] uppercase tracking-widest text-[#5A6A78] font-semibold">Legenda</div>
-        <button class="text-[#5A6A78] hover:text-[#0A1520]" @click="showLegend = false">
-          <UIcon name="i-lucide-x" class="size-3.5" />
+        <div class="text-[11px] uppercase tracking-widest text-[#5A6A78] font-semibold">
+          Legenda
+        </div>
+        <button
+          class="text-[#5A6A78] hover:text-[#0A1520]"
+          @click="showLegend = false"
+        >
+          <UIcon
+            name="i-lucide-x"
+            class="size-3.5"
+          />
         </button>
       </div>
-      <div v-if="viewDate" class="text-[10px] text-primary-600 mb-2">
+      <div
+        v-if="viewDate"
+        class="text-[10px] text-primary-600 mb-2"
+      >
         Bezetting op {{ new Date(viewDate).toLocaleDateString('nl-NL') }}
       </div>
       <div class="space-y-1">
@@ -1436,7 +1833,10 @@ function rejectSuggestion(idx: number) {
           class="flex items-center justify-between text-[11px]"
         >
           <div class="flex items-center gap-1.5">
-            <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: statusColors[key] }" />
+            <span
+              class="w-2.5 h-2.5 rounded-full shrink-0"
+              :style="{ background: statusColors[key] }"
+            />
             <span class="text-[#0A1520]">{{ label }}</span>
           </div>
           <span class="font-mono font-semibold text-[#5A6A78]">{{ counts[key] ?? 0 }}</span>
@@ -1995,75 +2395,134 @@ function rejectSuggestion(idx: number) {
       />
     </div>
 
-    <!-- AI Result Modal -->
-    <Transition name="fade">
+    <!-- AI review panel: interactive scan-review-confirm flow -->
+    <Transition name="ai-review">
       <div
-        v-if="showAiResult && aiResult"
-        class="fixed inset-0 z-[2000] flex items-center justify-center p-4"
-        @click="showAiResult = false"
+        v-if="showAiResult"
+        class="fixed z-[1500] inset-x-0 bottom-0 lg:inset-y-0 lg:right-0 lg:left-auto lg:w-[400px] bg-white border-t lg:border-t-0 lg:border-l border-black/[0.08] shadow-2xl flex flex-col max-h-[80vh] lg:max-h-none"
       >
-        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-        <div
-          class="relative bg-white rounded-[20px] shadow-2xl max-w-xl w-full max-h-[80vh] overflow-y-auto p-6"
-          @click.stop
-        >
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-semibold text-[#0A1520]">
-              AI analyse resultaat
-            </h2>
-            <button
-              class="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center"
-              @click="showAiResult = false"
-            >
+        <div class="px-4 py-3 border-b border-black/[0.08] flex items-center justify-between gap-2 shrink-0">
+          <div class="min-w-0">
+            <div class="text-sm font-semibold text-[#0A1520] inline-flex items-center gap-1.5">
               <UIcon
-                name="i-lucide-x"
-                class="size-4"
+                name="i-lucide-sparkles"
+                class="size-4 text-primary-500"
               />
-            </button>
-          </div>
-
-          <p class="text-sm text-[#5A6A78] mb-4">
-            {{ aiResult.piers?.length || 0 }} steigers en ~{{ aiResult.totalBerths || 0 }} ligplaatsen gedetecteerd.
-          </p>
-
-          <div
-            v-if="aiResult.notes"
-            class="bg-primary-500/5 border border-primary-500/20 rounded-[10px] p-3 mb-4 text-xs text-[#0A1520]"
-          >
-            {{ aiResult.notes }}
-          </div>
-
-          <div class="grid grid-cols-2 gap-2 mb-5">
-            <div
-              v-for="pier in aiResult.piers"
-              :key="pier.name"
-              class="bg-[#F4F7F8] rounded-[10px] p-3"
-            >
-              <div class="flex items-center gap-2 mb-1">
-                <span class="w-7 h-7 rounded-lg bg-primary-500/10 text-primary-500 flex items-center justify-center text-xs font-bold">{{ pier.name }}</span>
-                <span class="text-sm font-semibold text-[#0A1520]">{{ (pier.leftBerths || 0) + (pier.rightBerths || 0) }} plekken</span>
-              </div>
-              <div class="text-[11px] text-[#5A6A78]">
-                {{ pier.avgBerthLength || '?' }}m × {{ pier.avgBerthWidth || '?' }}m
-                <span
-                  v-if="pier.hasHead"
-                  class="text-amber-500 ml-1"
-                >T-kop</span>
-              </div>
+              AI-analyse
+            </div>
+            <div class="text-[11px] text-[#5A6A78] truncate">
+              {{ aiReviewPiers.length }} steigers · pas waar nodig aan
             </div>
           </div>
+          <button
+            class="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center"
+            title="Sluiten"
+            @click="cancelAiReview"
+          >
+            <UIcon
+              name="i-lucide-x"
+              class="size-4"
+            />
+          </button>
+        </div>
 
+        <div
+          v-if="aiResult?.notes"
+          class="px-4 py-2 bg-primary-500/5 border-b border-primary-500/20 text-[11px] text-[#0A1520] shrink-0"
+        >
+          {{ aiResult.notes }}
+        </div>
+
+        <div
+          v-if="aiTapMode"
+          class="px-4 py-2 bg-primary-500/10 border-b border-primary-500/20 text-[11px] text-primary-700 shrink-0 flex items-center justify-between gap-2"
+        >
+          <span v-if="!aiCounting">
+            Tik 2 punten op de kaart per steiger ({{ aiTapPoints.length }}/2). AI telt de ligplaatsen.
+          </span>
+          <span
+            v-else
+            class="inline-flex items-center gap-1.5"
+          >
+            <UIcon
+              name="i-lucide-loader-2"
+              class="size-3.5 animate-spin"
+            /> AI telt ligplaatsen…
+          </span>
+          <button
+            class="text-primary-700/70 hover:text-primary-700 text-[11px] font-semibold"
+            @click="disableAiTapMode"
+          >
+            Stop
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-3 space-y-2">
+          <div
+            v-if="!aiReviewPiers.length"
+            class="text-center text-[12px] text-[#5A6A78] py-6"
+          >
+            Geen steigers gedetecteerd. Voeg er handmatig toe via "Voeg steiger toe".
+          </div>
+
+          <MapPierReviewCard
+            v-for="(p, i) in aiReviewPiers"
+            :key="p.name + i"
+            :pier="p"
+            @update="updateAiPier(i, $event)"
+            @remove="removeAiPier(i)"
+            @rename="renameAiPier(i, $event)"
+          />
+
+          <div
+            v-if="aiWarnings.length"
+            class="bg-amber-500/5 border border-amber-500/20 rounded-[12px] p-3"
+          >
+            <div class="text-[11px] font-semibold text-amber-700 mb-1">
+              Opmerkingen
+            </div>
+            <ul class="text-[11px] text-amber-700 list-disc pl-4 space-y-0.5">
+              <li
+                v-for="w in aiWarnings"
+                :key="w"
+              >
+                {{ w }}
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div
+          class="px-4 py-3 border-t border-black/[0.08] shrink-0 space-y-2"
+          style="padding-bottom: max(env(safe-area-inset-bottom), 12px);"
+        >
+          <button
+            class="w-full py-2.5 rounded-full text-sm font-semibold inline-flex items-center justify-center gap-1.5"
+            :class="aiTapMode ? 'bg-primary-500 text-white' : 'bg-[#F4F7F8] text-[#0A1520]'"
+            @click="aiTapMode ? disableAiTapMode() : startAiTapAdd()"
+          >
+            <UIcon
+              :name="aiTapMode ? 'i-lucide-x' : 'i-lucide-map-pin-plus'"
+              class="size-4"
+            />
+            {{ aiTapMode ? 'Stop tikken' : 'Voeg steiger toe (tik 2 punten)' }}
+          </button>
           <div class="flex gap-2">
             <button
-              class="flex-1 py-2.5 rounded-full bg-primary-500 text-white text-sm font-semibold disabled:opacity-50"
-              :disabled="positioningLoading"
+              class="flex-1 py-2.5 rounded-full bg-primary-500 text-white text-sm font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+              :disabled="positioningLoading || !aiReviewPiers.length"
               @click="applyAiResult"
             >
-              {{ positioningLoading ? 'Bezig...' : 'Toepassen op kaart' }}
+              <UIcon
+                v-if="positioningLoading"
+                name="i-lucide-loader-2"
+                class="size-4 animate-spin"
+              />
+              {{ positioningLoading ? 'Bezig…' : 'Toepassen op kaart' }}
             </button>
             <button
               class="px-4 py-2.5 rounded-full bg-[#F4F7F8] text-[#5A6A78] text-sm font-semibold"
-              @click="showAiResult = false"
+              @click="cancelAiReview"
             >
               Annuleer
             </button>
@@ -2071,11 +2530,28 @@ function rejectSuggestion(idx: number) {
         </div>
       </div>
     </Transition>
+
+    <!-- Mobile floating action button — replaces overflow topbar buttons -->
+    <MapActionsFab
+      :edit-mode="editMode"
+      :ai-analyzing="aiAnalyzing"
+      :show-legend="showLegend"
+      @toggle-edit="toggleEditMode"
+      @run-ai="runAiAnalysis"
+      @toggle-legend="showLegend = !showLegend"
+    />
+
+    <!-- Setup wizard CTA when marina has no piers yet -->
+    <MapSetupWizardCta
+      v-if="!aiAnalyzing && drawnPiers.length === 0"
+      :marina-name="mapData?.marina?.name"
+      :has-piers="false"
+    />
   </div>
 </template>
 
 <style>
-.berth-marker-wrapper, .pier-label, .facility-marker-wrapper, .pier-vertex {
+.berth-marker-wrapper, .pier-label, .facility-marker-wrapper, .pier-vertex, .pier-endpoint {
   background: none !important;
   border: none !important;
 }
@@ -2086,6 +2562,27 @@ function rejectSuggestion(idx: number) {
 @media (max-width: 1023px) {
   .leaflet-top.leaflet-left {
     top: 60px;
+  }
+}
+
+.ai-review-enter-active,
+.ai-review-leave-active {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s;
+}
+
+@media (min-width: 1024px) {
+  .ai-review-enter-from,
+  .ai-review-leave-to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 1023px) {
+  .ai-review-enter-from,
+  .ai-review-leave-to {
+    transform: translateY(100%);
+    opacity: 0;
   }
 }
 </style>
