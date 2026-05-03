@@ -17,22 +17,21 @@ export default defineEventHandler(async (event) => {
     length: { gte: boatLength > 0 ? boatLength : 0 }
   }
 
-  // Also check for passanten berths first
+  // Suggest passanten berths first, regular afterwards
   const passantenBerths = await prisma.berth.findMany({
-    where: { ...where, isPassanten: true },
-    select: { id: true, code: true, pier: true, length: true, width: true },
+    where: { ...where, type: 'PASSANT' },
+    select: { id: true, code: true, pier: true, length: true, width: true, type: true },
     orderBy: [{ length: 'asc' }, { code: 'asc' }],
     take: 5
   })
 
   const regularBerths = await prisma.berth.findMany({
-    where: { ...where, isPassanten: false },
-    select: { id: true, code: true, pier: true, length: true, width: true },
+    where: { ...where, type: { not: 'PASSANT' } },
+    select: { id: true, code: true, pier: true, length: true, width: true, type: true },
     orderBy: [{ length: 'asc' }, { code: 'asc' }],
     take: 10
   })
 
-  // Passanten first, then regular
   const suggestions = [...passantenBerths, ...regularBerths].slice(0, 10)
 
   return {

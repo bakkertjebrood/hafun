@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
 
   const totalBerths = await prisma.berth.count({ where: { marinaId } })
   const occupiedBerths = await prisma.berth.count({
-    where: { marinaId, status: { in: ['OCCUPIED', 'SEASONAL', 'TEMPORARY'] } }
+    where: { marinaId, status: 'OCCUPIED' }
   })
   const occupancyPercent = totalBerths > 0 ? Math.round((occupiedBerths / totalBerths) * 100) : 0
 

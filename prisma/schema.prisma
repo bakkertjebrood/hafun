@@ -144,11 +144,16 @@ model User {
 enum BerthStatus {
   FREE
   OCCUPIED
-  TEMPORARY
-  STORAGE
-  SEASONAL
   EMPTY
   RELOCATED
+}
+
+enum BerthType {
+  JAARPLAATS      // year-round contract
+  SEIZOEN         // April-October seasonal
+  WINTERSTALLING  // winter storage
+  PASSANT         // short-stay
+  WERKPLEK        // work / wait place
 }
 
 model Berth {
@@ -159,7 +164,7 @@ model Berth {
   length       Float
   width        Float
   status       BerthStatus @default(FREE)
-  isPassanten  Boolean     @default(false)
+  type         BerthType   @default(JAARPLAATS)
   gpsLat       Float?
   gpsLng       Float?
   side         String?     // "LEFT" | "RIGHT" | "HEAD" | null

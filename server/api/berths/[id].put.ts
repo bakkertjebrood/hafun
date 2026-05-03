@@ -11,6 +11,7 @@ export default defineEventHandler(async (event) => {
 
   const side = body.side
   const validSide = side === null || side === 'LEFT' || side === 'RIGHT' || side === 'HEAD'
+  const validType = body.type === 'JAARPLAATS' || body.type === 'SEIZOEN' || body.type === 'WINTERSTALLING' || body.type === 'PASSANT' || body.type === 'WERKPLEK'
 
   const updated = await prisma.berth.update({
     where: { id },
@@ -21,7 +22,7 @@ export default defineEventHandler(async (event) => {
       ...(body.gpsLat !== undefined && { gpsLat: body.gpsLat }),
       ...(body.gpsLng !== undefined && { gpsLng: body.gpsLng }),
       ...(body.side !== undefined && validSide && { side: side || null }),
-      ...(typeof body.isPassanten === 'boolean' && { isPassanten: body.isPassanten }),
+      ...(validType && { type: body.type }),
       ...(typeof body.length === 'number' && { length: body.length }),
       ...(typeof body.width === 'number' && { width: body.width })
     },

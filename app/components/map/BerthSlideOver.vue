@@ -1,4 +1,6 @@
 <script setup lang="ts">
+type BerthType = 'JAARPLAATS' | 'SEIZOEN' | 'WINTERSTALLING' | 'PASSANT' | 'WERKPLEK'
+
 const props = defineProps<{
   berth: {
     id: string
@@ -7,7 +9,7 @@ const props = defineProps<{
     length: number
     width: number
     status: string
-    isPassanten?: boolean
+    type?: BerthType
     customer?: { id: string; name: string; contractType?: string } | null
     boat?: { id: string; name: string; type?: string; length: number; width?: number } | null
     notes?: Array<{ id: string; text: string; createdAt: string; author: { firstName: string; lastName: string } }>
@@ -21,24 +23,35 @@ const emit = defineEmits<{
   close: []
   statusChanged: [status: string]
   noteAdded: []
-  passantenChanged: [value: boolean]
+  typeChanged: [value: BerthType]
   deleteRequested: []
   checkinRequested: []
   linkCustomer: []
   flipSide: []
 }>()
 
+const typeOptions: { value: BerthType, label: string, color: string }[] = [
+  { value: 'JAARPLAATS', label: 'Jaarplaats', color: '#10B981' },
+  { value: 'SEIZOEN', label: 'Seizoen', color: '#F59E0B' },
+  { value: 'WINTERSTALLING', label: 'Stalling', color: '#8B5CF6' },
+  { value: 'PASSANT', label: 'Passant', color: '#EC4899' },
+  { value: 'WERKPLEK', label: 'Werkplek', color: '#F97316' }
+]
+
+const currentType = computed<BerthType>(() => props.berth.type ?? 'JAARPLAATS')
+const isPassant = computed(() => currentType.value === 'PASSANT')
+
 // Active booking for this berth
 const activeBooking = computed(() => {
   return props.berth.bookings?.find(b => b.status === 'reserved' || b.status === 'checked_in')
 })
 
-// Een vaste plek met een actieve booking voor iemand anders dan de vaste klant
-// = sublet (vaste ligger weg, plek tijdelijk aan een andere boot verhuurd)
+// Een vaste plek (Jaarplaats/Seizoen/Stalling) met een actieve booking voor
+// iemand anders dan de vaste klant = sublet (vaste ligger weg, tijdelijk
+// aan een andere boot verhuurd).
 const isSublet = computed(() => {
   const ab = activeBooking.value
-  if (!ab || !props.berth.customer || props.berth.isPassanten) return false
-  // Match op customer-id wanneer beschikbaar, val terug op naam (gast-bookings)
+  if (!ab || !props.berth.customer || isPassant.value) return false
   if (ab.customer?.id && props.berth.customer.id) {
     return ab.customer.id !== props.berth.customer.id
   }
@@ -75,13 +88,13 @@ async function checkout() {
   finally { checkingOut.value = false }
 }
 
-async function togglePassanten() {
-  const next = !props.berth.isPassanten
+async function changeType(next: BerthType) {
+  if (next === currentType.value) return
   await $fetch(`/api/berths/${props.berth.id}`, {
     method: 'PUT',
-    body: { isPassanten: next }
+    body: { type: next }
   })
-  emit('passantenChanged', next)
+  emit('typeChanged', next)
 }
 
 const newNote = ref('')
@@ -90,9 +103,6 @@ const savingNote = ref(false)
 const statusOptions = [
   { value: 'FREE', label: 'Vrij', color: '#10B981' },
   { value: 'OCCUPIED', label: 'Bezet', color: '#EF4444' },
-  { value: 'SEASONAL', label: 'Seizoen', color: '#F59E0B' },
-  { value: 'STORAGE', label: 'Stalling', color: '#8B5CF6' },
-  { value: 'TEMPORARY', label: 'Tijdelijk', color: '#F97316' },
   { value: 'EMPTY', label: 'Leeg', color: '#9CA3AF' },
   { value: 'RELOCATED', label: 'Verplaatst', color: '#6366F1' }
 ]
@@ -170,10 +180,13 @@ function formatDateTime(d: string) {
           <span class="text-xs text-[#5A6A78]">{{ berth.length }}m × {{ berth.width }}m</span>
           <span class="text-xs text-[#5A6A78]">· Steiger {{ berth.pier }}</span>
           <span
-            v-if="berth.isPassanten"
-            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-500/10 text-primary-500 text-[10px] font-semibold"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+            :style="{
+              background: typeOptions.find(t => t.value === currentType)!.color + '1A',
+              color: typeOptions.find(t => t.value === currentType)!.color
+            }"
           >
-            Passant
+            {{ typeOptions.find(t => t.value === currentType)!.label }}
           </span>
         </div>
       </div>
@@ -227,7 +240,27 @@ function formatDateTime(d: string) {
           </div>
         </div>
 
-        <!-- Quick actions: status change -->
+        <!-- Type wijzigen -->
+        <div class="px-5 py-4 border-b border-black/[0.08]">
+          <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-2">Type ligplaats</div>
+          <div class="grid grid-cols-3 gap-1.5 lg:grid-cols-5">
+            <button
+              v-for="opt in typeOptions"
+              :key="opt.value"
+              class="py-2 rounded-[10px] text-[11px] font-semibold border transition-all inline-flex flex-col items-center gap-0.5"
+              :class="currentType === opt.value
+                ? 'border-transparent text-white'
+                : 'border-black/[0.08] text-[#5A6A78] hover:border-black/20 bg-white'"
+              :style="currentType === opt.value ? { background: opt.color } : {}"
+              @click="changeType(opt.value)"
+            >
+              <span class="w-1.5 h-1.5 rounded-full" :class="currentType === opt.value ? 'bg-white' : ''" :style="currentType === opt.value ? {} : { background: opt.color }" />
+              <span class="leading-tight">{{ opt.label }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Status change -->
         <div class="px-5 py-4 border-b border-black/[0.08]">
           <div class="text-[10px] uppercase tracking-widest text-[#5A6A78] font-semibold mb-2">Status wijzigen</div>
           <div class="flex flex-wrap gap-1.5">
@@ -291,32 +324,21 @@ function formatDateTime(d: string) {
 
       <!-- Footer actions -->
       <div class="px-5 py-4 border-t border-black/[0.08] flex flex-col gap-2" style="padding-bottom: max(env(safe-area-inset-bottom), 16px);">
-        <div v-if="editMode" class="flex flex-col gap-2">
-          <div class="flex gap-2">
-            <button
-              class="flex-1 py-2 rounded-full text-xs font-semibold transition-all"
-              :class="berth.isPassanten
-                ? 'bg-primary-500/10 text-primary-500 hover:bg-primary-500/20'
-                : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/5'"
-              @click="togglePassanten"
-            >
-              {{ berth.isPassanten ? '✓ Passantenplaats' : 'Markeer als passanten' }}
-            </button>
-            <button
-              class="px-3 py-2 rounded-full bg-[#F4F7F8] text-[#5A6A78] text-xs font-semibold hover:bg-black/5 inline-flex items-center gap-1"
-              title="Wissel naar de andere zijde van de steiger"
-              @click="emit('flipSide')"
-            >
-              <UIcon name="i-lucide-flip-horizontal-2" class="size-3.5" />
-              Wissel zijde
-            </button>
-            <button
-              class="px-4 py-2 rounded-full bg-red-500/10 text-red-500 text-xs font-semibold hover:bg-red-500/20"
-              @click="emit('deleteRequested')"
-            >
-              Verwijder
-            </button>
-          </div>
+        <div v-if="editMode" class="flex gap-2">
+          <button
+            class="flex-1 py-2 rounded-full bg-[#F4F7F8] text-[#5A6A78] text-xs font-semibold hover:bg-black/5 inline-flex items-center justify-center gap-1"
+            title="Wissel naar de andere zijde van de steiger"
+            @click="emit('flipSide')"
+          >
+            <UIcon name="i-lucide-flip-horizontal-2" class="size-3.5" />
+            Wissel zijde
+          </button>
+          <button
+            class="px-4 py-2 rounded-full bg-red-500/10 text-red-500 text-xs font-semibold hover:bg-red-500/20"
+            @click="emit('deleteRequested')"
+          >
+            Verwijder
+          </button>
         </div>
         <!-- Check-in / Check-out for active booking -->
         <div v-if="activeBooking" class="flex gap-2">
@@ -343,7 +365,7 @@ function formatDateTime(d: string) {
             class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-full bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600"
           >
             <UIcon name="i-lucide-calendar-plus" class="size-3.5" />
-            {{ berth.customer && !berth.isPassanten ? 'Tijdelijk verhuren' : '+ Boeking' }}
+            {{ berth.customer && !isPassant ? 'Tijdelijk verhuren' : '+ Boeking' }}
           </NuxtLink>
           <UButton color="neutral" variant="outline" class="rounded-full flex-1" size="sm" @click="emit('linkCustomer')">
             Klant koppelen

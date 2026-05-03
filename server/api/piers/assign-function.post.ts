@@ -1,12 +1,14 @@
 import { prisma } from '../../utils/prisma'
 import { getAuthUser } from '../../utils/auth'
 
-const ALLOWED_STATUSES = ['FREE', 'OCCUPIED', 'TEMPORARY', 'STORAGE', 'SEASONAL', 'EMPTY', 'RELOCATED'] as const
+const ALLOWED_STATUSES = ['FREE', 'OCCUPIED', 'EMPTY', 'RELOCATED'] as const
+const ALLOWED_TYPES = ['JAARPLAATS', 'SEIZOEN', 'WINTERSTALLING', 'PASSANT', 'WERKPLEK'] as const
 type AllowedStatus = typeof ALLOWED_STATUSES[number]
+type AllowedType = typeof ALLOWED_TYPES[number]
 
 interface AssignBody {
   pierName: string
-  isPassanten?: boolean
+  type?: AllowedType
   status?: AllowedStatus
 }
 
@@ -22,12 +24,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'pierName is verplicht' })
   }
 
-  const data: { isPassanten?: boolean, status?: AllowedStatus } = {}
-  if (typeof body.isPassanten === 'boolean') data.isPassanten = body.isPassanten
+  const data: { type?: AllowedType, status?: AllowedStatus } = {}
+  if (body.type && ALLOWED_TYPES.includes(body.type)) data.type = body.type
   if (body.status && ALLOWED_STATUSES.includes(body.status)) data.status = body.status
 
   if (Object.keys(data).length === 0) {
-    throw createError({ statusCode: 400, message: 'Geef minimaal isPassanten of status mee' })
+    throw createError({ statusCode: 400, message: 'Geef minimaal type of status mee' })
   }
 
   const result = await prisma.berth.updateMany({

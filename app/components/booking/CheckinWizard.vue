@@ -82,10 +82,10 @@ async function confirm() {
       }
     })
 
-    // 3. Update berth status
+    // 3. Update berth status to OCCUPIED zolang deze passant er ligt
     await $fetch(`/api/berths/${selectedBerth.value.id}`, {
       method: 'PUT',
-      body: { status: 'TEMPORARY' }
+      body: { status: 'OCCUPIED' }
     })
 
     step.value = 6 // done

@@ -1,18 +1,21 @@
 import { prisma } from '../../utils/prisma'
 import { getAuthUser } from '../../utils/auth'
 
+type BerthTypeValue = 'JAARPLAATS' | 'SEIZOEN' | 'WINTERSTALLING' | 'PASSANT' | 'WERKPLEK'
+const VALID_TYPES: readonly string[] = ['JAARPLAATS', 'SEIZOEN', 'WINTERSTALLING', 'PASSANT', 'WERKPLEK']
+
 interface BerthSpec {
   length: number
   width?: number
   count: number
-  isPassanten?: boolean
+  type?: BerthTypeValue
   side?: 'LEFT' | 'RIGHT' | 'HEAD'
 }
 
 interface PierSpec {
   name: string
   hasHead?: boolean
-  allPassanten?: boolean
+  allType?: BerthTypeValue
   berths: BerthSpec[]
 }
 
@@ -82,7 +85,7 @@ export default defineEventHandler(async (event) => {
         pier: string
         length: number
         width: number
-        isPassanten: boolean
+        type: BerthTypeValue
         side: string | null
       }[] = []
 
@@ -94,7 +97,8 @@ export default defineEventHandler(async (event) => {
         const count = Math.min(Math.max(Math.floor(spec.count || 0), 0), 200)
         const length = Math.max(Math.min(spec.length || 10, 60), 2)
         const width = Math.max(Math.min(spec.width || 3, 20), 1)
-        const passanten = spec.isPassanten ?? pier.allPassanten ?? false
+        const fallback = pier.allType && VALID_TYPES.includes(pier.allType) ? pier.allType : 'JAARPLAATS'
+        const type: BerthTypeValue = spec.type && VALID_TYPES.includes(spec.type) ? spec.type : fallback
         const side = spec.side === 'LEFT' || spec.side === 'RIGHT' || spec.side === 'HEAD' ? spec.side : null
 
         for (let i = 0; i < count; i++) {
@@ -112,7 +116,7 @@ export default defineEventHandler(async (event) => {
             pier: pierName,
             length,
             width,
-            isPassanten: passanten,
+            type,
             side
           })
         }

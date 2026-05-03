@@ -29,16 +29,42 @@ let drawPolyline: any = null
 let drawHeadPolyline: any = null
 let drawPreviewLine: any = null
 
+// Kleur per displayStatus. Lege plekken worden ingekleurd op type, bezette
+// plekken op OCCUPIED/PASSANT/SUBLET, en MELDING blijft een eigen accent.
 const statusColors: Record<string, string> = {
-  FREE: '#10B981', OCCUPIED: '#EF4444', PASSANT: '#EC4899', SUBLET: '#7C3AED', SEASONAL: '#F59E0B',
-  STORAGE: '#8B5CF6', TEMPORARY: '#F97316', EMPTY: '#9CA3AF', RELOCATED: '#6366F1',
+  // type-based (lege plekken)
+  JAARPLAATS: '#10B981',
+  SEIZOEN: '#F59E0B',
+  WINTERSTALLING: '#8B5CF6',
+  PASSANT: '#EC4899',
+  WERKPLEK: '#F97316',
+  // state-based
+  OCCUPIED: '#EF4444',
+  SUBLET: '#7C3AED',
+  EMPTY: '#9CA3AF',
+  RELOCATED: '#6366F1',
   MELDING: '#F43F5E'
 }
 const statusLabels: Record<string, string> = {
-  FREE: 'Vrij', OCCUPIED: 'Klant', PASSANT: 'Passant', SUBLET: 'Tijdelijk verhuurd', SEASONAL: 'Zomer',
-  STORAGE: 'Stalling', TEMPORARY: 'Tijdelijk', EMPTY: 'Leeg', RELOCATED: 'Verplaatst',
+  JAARPLAATS: 'Jaarplaats',
+  SEIZOEN: 'Seizoen',
+  WINTERSTALLING: 'Stalling',
+  PASSANT: 'Passant',
+  WERKPLEK: 'Werkplek',
+  OCCUPIED: 'Bezet',
+  SUBLET: 'Tijdelijk verhuurd',
+  EMPTY: 'Leeg',
+  RELOCATED: 'Verplaatst',
   MELDING: 'Melding'
 }
+type BerthTypeValue = 'JAARPLAATS' | 'SEIZOEN' | 'WINTERSTALLING' | 'PASSANT' | 'WERKPLEK'
+const berthTypeOptions: { value: BerthTypeValue, label: string, color: string }[] = [
+  { value: 'JAARPLAATS', label: 'Jaarplaats', color: '#10B981' },
+  { value: 'SEIZOEN', label: 'Seizoen', color: '#F59E0B' },
+  { value: 'WINTERSTALLING', label: 'Stalling', color: '#8B5CF6' },
+  { value: 'PASSANT', label: 'Passant', color: '#EC4899' },
+  { value: 'WERKPLEK', label: 'Werkplek', color: '#F97316' }
+]
 
 // Datumfilter — bekijk de bezetting op een andere dag
 const viewDate = ref('')
@@ -49,7 +75,7 @@ const pierMenuPos = ref<{ x: number, y: number } | null>(null)
 const pierMenuBerthCount = ref(4)
 const pierMenuBerthLength = ref(10)
 const pierMenuBerthSide = ref<'LEFT' | 'RIGHT' | 'HEAD'>('LEFT')
-const pierMenuBerthPassanten = ref(false)
+const pierMenuBerthType = ref<BerthTypeValue>('JAARPLAATS')
 const pierMenuBerthBusy = ref(false)
 
 // Facility catalog: type → label, emoji marker glyph, brand color
@@ -82,7 +108,7 @@ const facilityLayers: any[] = []
 const placingFacilityType = ref<string | null>(null)
 
 // Quick berth placement (drag/click a quick-add button onto the map)
-const placingBerth = ref<null | { isPassanten: boolean, length: number }>(null)
+const placingBerth = ref<null | { type: BerthTypeValue, length: number }>(null)
 const placingBerthBusy = ref(false)
 const quickBerthLength = ref(10)
 
@@ -301,7 +327,7 @@ function renderPierLines() {
       pierMenuBerthCount.value = 4
       pierMenuBerthLength.value = 10
       pierMenuBerthSide.value = sideLabelsFor(pier).topValue
-      pierMenuBerthPassanten.value = false
+      pierMenuBerthType.value = 'JAARPLAATS'
       pierMenuFor.value = pier
       pierMenuPos.value = { x: px.x, y: px.y }
       L.DomEvent.stopPropagation(e)
@@ -633,7 +659,7 @@ async function finishDrawPier() {
       pierMenuBerthCount.value = 4
       pierMenuBerthLength.value = 10
       pierMenuBerthSide.value = sideLabelsFor(justDrawn).topValue
-      pierMenuBerthPassanten.value = false
+      pierMenuBerthType.value = 'JAARPLAATS'
       pierMenuFor.value = justDrawn
       pierMenuPos.value = { x: px.x, y: px.y }
     }
@@ -754,10 +780,10 @@ function addBerthMarkers() {
     // Boat lies perpendicular to pier; rectangle long axis = pier bearing + 90°
     const rot = pier ? (pierBearing(pier) + 90) : 0
 
-    // Rectangle size: represent boat (long axis) perpendicular to pier
+    // Rectangle size: represent boat (long axis) perpendicular to pier.
+    // Iets groter dan voorheen zodat de code-label leesbaar blijft.
     const isCoarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
     const touchBoost = isEdit && isCoarse ? 1.5 : 1
-    // Iets groter dan voorheen zodat de code-label leesbaar blijft.
     const w = Math.round((isEdit ? 14 : 12) * touchBoost) // beam (px)
     const h = Math.round((isEdit ? 28 : 24) * touchBoost) // length (px)
 
@@ -770,15 +796,10 @@ function addBerthMarkers() {
           ? '#F59E0B'
           : '#94A3B8'
 
-    const isPassant = !!berth.isPassanten
     const borderColor = isEdit ? sideColor : 'white'
-    const titleSuffix = isPassant ? ' (passant)' : ''
-    const labelText = berthShortCode(berth.code)
-    const labelFontSize = isEdit ? 8 : 9
-    const passantBadge = isPassant && !isEdit
-      ? `<div style="position:absolute;top:-4px;left:-4px;width:11px;height:11px;background:#EC4899;border:1.5px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:7px;font-weight:800;line-height:1;font-family:system-ui;transform:rotate(${-rot}deg);">P</div>`
-      : ''
+    const typeLabel = statusLabels[berth.type] || berth.type || ''
 
+    const labelFontSize = isEdit ? 8 : 9
     const html = `
       <div class="berth-marker-rot" style="transform: rotate(${rot}deg); transform-origin: center; width: ${w}px; height: ${h}px;">
         <div class="berth-marker" style="
@@ -788,9 +809,8 @@ function addBerthMarkers() {
           cursor: ${isEdit ? 'grab' : 'pointer'};
           transition: transform 0.15s;
           position: relative;
-        " title="${berth.code} — ${statusLabels[status] || status}${titleSuffix}">
-          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:white;font-size:${labelFontSize}px;font-weight:700;text-shadow:0 0 2px rgba(0,0,0,0.7);transform: rotate(${-rot}deg);">${labelText}</div>
-          ${passantBadge}
+        " title="${berth.code} — ${typeLabel} (${statusLabels[status] || status})">
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:white;font-size:${labelFontSize}px;font-weight:700;text-shadow:0 0 2px rgba(0,0,0,0.7);transform: rotate(${-rot}deg);">${berthShortCode(berth.code)}</div>
         </div>
       </div>
     `
@@ -944,9 +964,10 @@ const berthCountByPier = computed<Record<string, number>>(() => {
   return counts
 })
 const passantenCountByPier = computed<Record<string, number>>(() => {
+  // Count berths typed as PASSANT per pier name
   const counts: Record<string, number> = {}
   for (const b of (mapData.value?.berths || [])) {
-    if (b.isPassanten) counts[b.pier] = (counts[b.pier] || 0) + 1
+    if (b.type === 'PASSANT') counts[b.pier] = (counts[b.pier] || 0) + 1
   }
   return counts
 })
@@ -994,7 +1015,7 @@ async function onMapDrop(e: DragEvent) {
   const newBerthRaw = e.dataTransfer?.getData('text/new-berth')
   if (newBerthRaw) {
     try {
-      const spec = JSON.parse(newBerthRaw) as { isPassanten: boolean, length: number }
+      const spec = JSON.parse(newBerthRaw) as { type: BerthTypeValue, length: number }
       await placeBerthAt(latlng.lat, latlng.lng, spec)
     } catch (err) {
       console.error('Drop nieuwe ligplaats mislukt', err)
@@ -1019,16 +1040,16 @@ async function onMapDrop(e: DragEvent) {
   }
 }
 
-function startPlacingBerth(isPassanten: boolean) {
+function startPlacingBerth(type: BerthTypeValue) {
   // Toggle off if same type already active
-  if (placingBerth.value && placingBerth.value.isPassanten === isPassanten) {
+  if (placingBerth.value && placingBerth.value.type === type) {
     cancelPlacingBerth()
     return
   }
   // Cancel competing placement modes
   cancelPlacingFacility()
   closePierMenu()
-  placingBerth.value = { isPassanten, length: quickBerthLength.value }
+  placingBerth.value = { type, length: quickBerthLength.value }
   if (mapInstance) mapInstance.getContainer().style.cursor = 'crosshair'
 }
 
@@ -1037,16 +1058,16 @@ function cancelPlacingBerth() {
   if (mapInstance) mapInstance.getContainer().style.cursor = ''
 }
 
-function onDragStartNewBerth(e: DragEvent, isPassanten: boolean) {
+function onDragStartNewBerth(e: DragEvent, type: BerthTypeValue) {
   if (!e.dataTransfer) return
   e.dataTransfer.effectAllowed = 'copy'
   e.dataTransfer.setData('text/new-berth', JSON.stringify({
-    isPassanten,
+    type,
     length: quickBerthLength.value
   }))
 }
 
-async function placeBerthAt(lat: number, lng: number, override?: { isPassanten: boolean, length: number }) {
+async function placeBerthAt(lat: number, lng: number, override?: { type: BerthTypeValue, length: number }) {
   const spec = override || placingBerth.value
   if (!spec || !marinaId.value || placingBerthBusy.value) return
   placingBerthBusy.value = true
@@ -1058,7 +1079,7 @@ async function placeBerthAt(lat: number, lng: number, override?: { isPassanten: 
         gpsLat: lat,
         gpsLng: lng,
         length: spec.length,
-        isPassanten: spec.isPassanten
+        type: spec.type
       }
     }) as any
     if (mapData.value?.berths) mapData.value.berths.push({ ...created, displayStatus: created.status })
@@ -1081,7 +1102,7 @@ const showAddBerth = ref<string | null>(null) // pier name or null
 const addBerthCount = ref(4)
 const addBerthLength = ref(10)
 const addBerthWidth = ref(3.5)
-const addBerthPassanten = ref(false)
+const addBerthType = ref<BerthTypeValue>('JAARPLAATS')
 const addBerthSaving = ref(false)
 
 function nextPierName(): string {
@@ -1129,7 +1150,7 @@ function openAddBerth(pierName: string) {
   addBerthCount.value = 4
   addBerthLength.value = 10
   addBerthWidth.value = 3.5
-  addBerthPassanten.value = false
+  addBerthType.value = 'JAARPLAATS'
 }
 
 async function createBerths() {
@@ -1144,7 +1165,7 @@ async function createBerths() {
         count: addBerthCount.value,
         length: addBerthLength.value,
         width: addBerthWidth.value,
-        isPassanten: addBerthPassanten.value
+        type: addBerthType.value
       }
     })
     showAddBerth.value = null
@@ -1167,18 +1188,17 @@ async function createBerths() {
   }
 }
 
-async function togglePierPassanten(pier: any) {
-  const current = passantenCountByPier.value[pier.name] || 0
-  const total = berthCountByPier.value[pier.name] || 0
-  const allPassanten = total > 0 && current === total
+async function setPierType(pier: any, type: BerthTypeValue) {
   try {
     await $fetch(`/api/piers/${pier.id}/passanten`, {
       method: 'PUT',
-      body: { isPassanten: !allPassanten }
+      body: { type }
     })
     await refreshMapData()
+    clearMarkers()
+    addBerthMarkers()
   } catch (e: any) {
-    alert(e?.data?.message || 'Passanten wijzigen mislukt')
+    alert(e?.data?.message || 'Type wijzigen mislukt')
   }
 }
 
@@ -1192,7 +1212,7 @@ async function addBerthsFromMenu(pier: any) {
   const count = Math.max(1, Math.min(200, Math.floor(pierMenuBerthCount.value)))
   const length = Math.max(2, Math.min(60, pierMenuBerthLength.value))
   const side = pierMenuBerthSide.value
-  const isPassanten = pierMenuBerthPassanten.value
+  const type = pierMenuBerthType.value
   pierMenuBerthBusy.value = true
   try {
     const body: {
@@ -1202,7 +1222,7 @@ async function addBerthsFromMenu(pier: any) {
       length: number
       width: number
       side: 'LEFT' | 'RIGHT' | 'HEAD'
-      isPassanten: boolean
+      type: BerthTypeValue
       codePrefix?: string
     } = {
       marinaId: marinaId.value,
@@ -1211,7 +1231,7 @@ async function addBerthsFromMenu(pier: any) {
       length,
       width: 3.5,
       side,
-      isPassanten
+      type
     }
     if (side === 'HEAD') body.codePrefix = `${pier.name}-KOP`
     await $fetch('/api/berths/bulk', { method: 'POST', body })
@@ -1231,23 +1251,12 @@ async function addBerthsFromMenu(pier: any) {
   }
 }
 
-async function assignPierFunction(pier: any, kind: 'PASSANTEN' | 'JAARPLAATS' | 'STALLING' | 'SEIZOEN') {
-  const body: { pierName: string, isPassanten?: boolean, status?: string } = { pierName: pier.name }
-  if (kind === 'PASSANTEN') {
-    body.isPassanten = true
-    body.status = 'FREE'
-  } else if (kind === 'JAARPLAATS') {
-    body.isPassanten = false
-    body.status = 'FREE'
-  } else if (kind === 'STALLING') {
-    body.isPassanten = false
-    body.status = 'STORAGE'
-  } else if (kind === 'SEIZOEN') {
-    body.isPassanten = false
-    body.status = 'SEASONAL'
-  }
+async function assignPierType(pier: any, type: BerthTypeValue) {
   try {
-    await $fetch('/api/piers/assign-function', { method: 'POST', body })
+    await $fetch('/api/piers/assign-function', {
+      method: 'POST',
+      body: { pierName: pier.name, type, status: 'FREE' }
+    })
     await refreshMapData()
     clearMarkers()
     addBerthMarkers()
@@ -1569,8 +1578,9 @@ async function deleteFacility(f: any) {
         Bezetting op {{ new Date(viewDate).toLocaleDateString('nl-NL') }}
       </div>
       <div class="space-y-1">
+        <div class="text-[9px] uppercase tracking-wide text-[#5A6A78]/70 font-semibold mt-0.5">Vrije plekken (op type)</div>
         <div
-          v-for="(label, key) in statusLabels"
+          v-for="(label, key) in { JAARPLAATS: 'Jaarplaats', SEIZOEN: 'Seizoen', WINTERSTALLING: 'Stalling', PASSANT: 'Passant', WERKPLEK: 'Werkplek' }"
           :key="key"
           class="flex items-center justify-between text-[11px]"
         >
@@ -1583,13 +1593,20 @@ async function deleteFacility(f: any) {
           </div>
           <span class="font-mono font-semibold text-[#5A6A78]">{{ counts[key] ?? 0 }}</span>
         </div>
-      </div>
-      <div class="border-t border-black/[0.06] mt-2 pt-2">
-        <div class="flex items-center gap-1.5 text-[11px] text-[#5A6A78]">
-          <span class="relative w-3 h-3 rounded-sm bg-emerald-500 shrink-0">
-            <span class="absolute -top-1 -left-1 w-2.5 h-2.5 bg-pink-500 rounded-full border border-white text-[6px] font-bold text-white flex items-center justify-center leading-none">P</span>
-          </span>
-          Passantenplek
+        <div class="text-[9px] uppercase tracking-wide text-[#5A6A78]/70 font-semibold mt-2">Bezet</div>
+        <div
+          v-for="(label, key) in { OCCUPIED: 'Bezet', SUBLET: 'Tijdelijk verhuurd', EMPTY: 'Leeg', RELOCATED: 'Verplaatst', MELDING: 'Melding' }"
+          :key="key"
+          class="flex items-center justify-between text-[11px]"
+        >
+          <div class="flex items-center gap-1.5">
+            <span
+              class="w-2.5 h-2.5 rounded-full shrink-0"
+              :style="{ background: statusColors[key] }"
+            />
+            <span class="text-[#0A1520]">{{ label }}</span>
+          </div>
+          <span class="font-mono font-semibold text-[#5A6A78]">{{ counts[key] ?? 0 }}</span>
         </div>
       </div>
     </div>
@@ -1835,8 +1852,8 @@ async function deleteFacility(f: any) {
                   :class="(berthCountByPier[name] || 0) > 0 && passantenCountByPier[name] === berthCountByPier[name]
                     ? 'bg-primary-500/10 text-primary-500'
                     : 'bg-[#F4F7F8] text-[#5A6A78] hover:bg-black/5'"
-                  :title="'Alle ligplaatsen als passanten markeren'"
-                  @click="togglePierPassanten(drawnPiers.find(p => p.name === name))"
+                  :title="'Alle ligplaatsen op deze steiger als passant markeren'"
+                  @click="setPierType(drawnPiers.find(p => p.name === name), 'PASSANT')"
                 >
                   Passanten
                 </button>
@@ -1907,14 +1924,21 @@ async function deleteFacility(f: any) {
                     >
                   </div>
                 </div>
-                <label class="flex items-center gap-2 text-xs cursor-pointer">
-                  <input
-                    v-model="addBerthPassanten"
-                    type="checkbox"
-                    class="accent-primary-500 w-4 h-4"
+                <div>
+                  <div class="text-[10px] uppercase tracking-wide text-[#5A6A78] font-semibold mb-1">Type</div>
+                  <select
+                    v-model="addBerthType"
+                    class="w-full px-2 py-1.5 text-[12px] rounded-md border border-black/[0.12] bg-white"
                   >
-                  <span class="text-[#0A1520] font-medium">Passantenplaatsen</span>
-                </label>
+                    <option
+                      v-for="opt in berthTypeOptions"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                </div>
                 <div class="flex gap-1.5">
                   <button
                     class="flex-1 py-1 rounded bg-primary-500 text-white text-[10px] font-semibold disabled:opacity-50"
@@ -2103,32 +2127,22 @@ async function deleteFacility(f: any) {
             Steiger
           </button>
 
-          <div class="flex items-center gap-1.5 bg-white rounded-full shadow-xl border border-black/[0.08] p-1.5">
+          <div class="flex items-center gap-1 bg-white rounded-full shadow-xl border border-black/[0.08] p-1 flex-wrap">
             <button
+              v-for="opt in berthTypeOptions"
+              :key="opt.value"
               :draggable="!!drawnPiers.length"
-              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[12px] font-semibold transition-colors disabled:opacity-50"
-              :class="placingBerth && !placingBerth.isPassanten ? 'bg-emerald-500 text-white' : 'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20'"
+              class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors disabled:opacity-50"
+              :class="placingBerth && placingBerth.type === opt.value ? 'text-white' : 'text-[#5A6A78] hover:bg-black/5'"
+              :style="placingBerth && placingBerth.type === opt.value ? { background: opt.color } : {}"
               :disabled="!drawnPiers.length"
-              :title="drawnPiers.length ? 'Klik dan op de kaart, of sleep naar de gewenste plek' : 'Teken eerst een steiger'"
-              @click="startPlacingBerth(false)"
-              @dragstart="onDragStartNewBerth($event, false)"
+              :title="drawnPiers.length ? `Klik dan op de kaart, of sleep om een ${opt.label.toLowerCase()} te plaatsen` : 'Teken eerst een steiger'"
+              @click="startPlacingBerth(opt.value)"
+              @dragstart="onDragStartNewBerth($event, opt.value)"
               @dragend="cancelPlacingBerth"
             >
-              <span class="w-2 h-2 rounded-sm bg-emerald-500" />
-              Vaste plek
-            </button>
-            <button
-              :draggable="!!drawnPiers.length"
-              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[12px] font-semibold transition-colors disabled:opacity-50"
-              :class="placingBerth && placingBerth.isPassanten ? 'bg-pink-500 text-white' : 'bg-pink-500/10 text-pink-700 hover:bg-pink-500/20'"
-              :disabled="!drawnPiers.length"
-              :title="drawnPiers.length ? 'Klik dan op de kaart, of sleep naar de gewenste plek' : 'Teken eerst een steiger'"
-              @click="startPlacingBerth(true)"
-              @dragstart="onDragStartNewBerth($event, true)"
-              @dragend="cancelPlacingBerth"
-            >
-              <span class="w-2 h-2 rounded-sm bg-pink-500" />
-              Passant
+              <span class="w-1.5 h-1.5 rounded-sm" :style="{ background: opt.color }" />
+              {{ opt.label }}
             </button>
             <label class="flex items-center gap-1 text-[11px] text-[#5A6A78] pl-1.5 pr-1 border-l border-black/[0.08]">
               <input
@@ -2149,10 +2163,10 @@ async function deleteFacility(f: any) {
         >
           <span
             class="w-2 h-2 rounded-sm shrink-0"
-            :style="{ background: placingBerth.isPassanten ? '#EC4899' : '#10B981' }"
+            :style="{ background: berthTypeOptions.find(o => o.value === placingBerth!.type)!.color }"
           />
           <span class="truncate">
-            Klik op de kaart om <strong>{{ placingBerth.isPassanten ? 'passantenplek' : 'vaste plek' }}</strong> te plaatsen
+            Klik op de kaart om een <strong>{{ berthTypeOptions.find(o => o.value === placingBerth!.type)!.label.toLowerCase() }}</strong> te plaatsen
           </span>
           <button
             class="text-[#5A6A78] hover:text-[#0A1520] shrink-0 -mr-1"
@@ -2206,21 +2220,21 @@ async function deleteFacility(f: any) {
               <button
                 class="py-1 rounded-full text-[11px] font-semibold transition-colors"
                 :class="pierMenuBerthSide === pierMenuSideLabels.topValue ? 'bg-primary-500 text-white' : 'text-[#5A6A78] hover:bg-black/5'"
-                @click="pierMenuBerthSide = pierMenuSideLabels.topValue; pierMenuBerthPassanten = false"
+                @click="pierMenuBerthSide = pierMenuSideLabels.topValue"
               >
                 {{ pierMenuSideLabels.topLabel }}
               </button>
               <button
                 class="py-1 rounded-full text-[11px] font-semibold transition-colors"
                 :class="pierMenuBerthSide === pierMenuSideLabels.bottomValue ? 'bg-primary-500 text-white' : 'text-[#5A6A78] hover:bg-black/5'"
-                @click="pierMenuBerthSide = pierMenuSideLabels.bottomValue; pierMenuBerthPassanten = false"
+                @click="pierMenuBerthSide = pierMenuSideLabels.bottomValue"
               >
                 {{ pierMenuSideLabels.bottomLabel }}
               </button>
               <button
                 class="py-1 rounded-full text-[11px] font-semibold transition-colors"
                 :class="pierMenuBerthSide === 'HEAD' ? 'bg-primary-500 text-white' : 'text-[#5A6A78] hover:bg-black/5'"
-                @click="pierMenuBerthSide = 'HEAD'; pierMenuBerthPassanten = true"
+                @click="pierMenuBerthSide = 'HEAD'; pierMenuBerthType = 'PASSANT'"
               >
                 Kop
               </button>
@@ -2249,14 +2263,21 @@ async function deleteFacility(f: any) {
               </label>
             </div>
 
-            <label class="flex items-center gap-1.5 mb-1.5 text-[11px] text-[#5A6A78] cursor-pointer">
-              <input
-                v-model="pierMenuBerthPassanten"
-                type="checkbox"
-                class="accent-primary-500"
-              >
-              Passantenplekken
-            </label>
+            <div class="mb-1.5">
+              <div class="text-[10px] uppercase tracking-wide text-[#5A6A78] font-semibold mb-1">Type</div>
+              <div class="grid grid-cols-3 gap-1">
+                <button
+                  v-for="opt in berthTypeOptions"
+                  :key="opt.value"
+                  class="py-1 rounded-full text-[10px] font-semibold transition-colors border"
+                  :class="pierMenuBerthType === opt.value ? 'border-transparent text-white' : 'border-black/[0.08] text-[#5A6A78] hover:bg-black/5 bg-white'"
+                  :style="pierMenuBerthType === opt.value ? { background: opt.color } : {}"
+                  @click="pierMenuBerthType = opt.value"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+            </div>
 
             <button
               class="w-full py-1.5 rounded-full bg-primary-500 text-white text-[12px] font-semibold disabled:opacity-50"
@@ -2270,30 +2291,15 @@ async function deleteFacility(f: any) {
           <div class="text-[10px] uppercase tracking-wide text-[#5A6A78] font-semibold mb-1.5">
             Maak alle ligplaatsen
           </div>
-          <div class="grid grid-cols-2 gap-1.5 mb-2">
+          <div class="grid grid-cols-3 gap-1.5 mb-2">
             <button
-              class="px-2.5 py-2 rounded-[10px] bg-pink-500/10 text-pink-700 text-[12px] font-semibold hover:bg-pink-500/20"
-              @click="assignPierFunction(pierMenuFor, 'PASSANTEN')"
+              v-for="opt in berthTypeOptions"
+              :key="opt.value"
+              class="px-2 py-2 rounded-[10px] text-[11px] font-semibold transition-colors"
+              :style="{ background: opt.color + '1A', color: opt.color }"
+              @click="assignPierType(pierMenuFor, opt.value)"
             >
-              Passanten
-            </button>
-            <button
-              class="px-2.5 py-2 rounded-[10px] bg-emerald-500/10 text-emerald-700 text-[12px] font-semibold hover:bg-emerald-500/20"
-              @click="assignPierFunction(pierMenuFor, 'JAARPLAATS')"
-            >
-              Jaarplaats
-            </button>
-            <button
-              class="px-2.5 py-2 rounded-[10px] bg-amber-500/10 text-amber-700 text-[12px] font-semibold hover:bg-amber-500/20"
-              @click="assignPierFunction(pierMenuFor, 'SEIZOEN')"
-            >
-              Seizoen
-            </button>
-            <button
-              class="px-2.5 py-2 rounded-[10px] bg-purple-500/10 text-purple-700 text-[12px] font-semibold hover:bg-purple-500/20"
-              @click="assignPierFunction(pierMenuFor, 'STALLING')"
-            >
-              Stalling
+              {{ opt.label }}
             </button>
           </div>
 

@@ -12,13 +12,15 @@ const mapData = ref<any>(null)
 const clock = ref('')
 
 const statusColors: Record<string, string> = {
-  FREE: '#10B981', OCCUPIED: '#EF4444', PASSANT: '#EC4899', SUBLET: '#7C3AED', SEASONAL: '#F59E0B',
-  STORAGE: '#8B5CF6', TEMPORARY: '#F97316', EMPTY: '#9CA3AF', RELOCATED: '#6366F1',
+  JAARPLAATS: '#10B981', SEIZOEN: '#F59E0B', WINTERSTALLING: '#8B5CF6',
+  PASSANT: '#EC4899', WERKPLEK: '#F97316',
+  OCCUPIED: '#EF4444', SUBLET: '#7C3AED', EMPTY: '#9CA3AF', RELOCATED: '#6366F1',
   MELDING: '#F43F5E'
 }
 const statusLabels: Record<string, string> = {
-  FREE: 'Vrij', OCCUPIED: 'Klant', PASSANT: 'Passant', SUBLET: 'Tijdelijk verhuurd', SEASONAL: 'Zomer',
-  STORAGE: 'Stalling', TEMPORARY: 'Tijdelijk', EMPTY: 'Leeg', RELOCATED: 'Verplaatst',
+  JAARPLAATS: 'Jaarplaats', SEIZOEN: 'Seizoen', WINTERSTALLING: 'Stalling',
+  PASSANT: 'Passant', WERKPLEK: 'Werkplek',
+  OCCUPIED: 'Bezet', SUBLET: 'Tijdelijk verhuurd', EMPTY: 'Leeg', RELOCATED: 'Verplaatst',
   MELDING: 'Melding'
 }
 
