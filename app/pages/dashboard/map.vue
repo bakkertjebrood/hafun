@@ -752,6 +752,8 @@ function addBerthMarkers() {
       marker.on('drag', () => { dragged = true })
       marker.on('dragend', async (e: any) => {
         const pos = e.target.getLatLng()
+        berth.gpsLat = pos.lat
+        berth.gpsLng = pos.lng
         await $fetch(`/api/berths/${berth.id}`, {
           method: 'PUT',
           body: { gpsLat: pos.lat, gpsLng: pos.lng }
