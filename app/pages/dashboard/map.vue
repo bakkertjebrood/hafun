@@ -42,6 +42,7 @@ const statusLabels: Record<string, string> = {
 // Datumfilter — bekijk de bezetting op een andere dag
 const viewDate = ref('')
 const showLegend = ref(true)
+const setupCtaDismissed = ref(false)
 
 // Facility catalog: type → label, emoji marker glyph, brand color
 interface FacilityDef { label: string, glyph: string, color: string }
@@ -2379,6 +2380,16 @@ function rejectSuggestion(idx: number) {
             class="size-5 text-[#0A1520]"
           />
         </button>
+
+        <!-- Setup wizard CTA when marina has no piers yet -->
+        <MapSetupWizardCta
+          v-if="!setupCtaDismissed && !showAiResult && drawnPiers.length === 0"
+          :marina-name="mapData?.marina?.name"
+          :has-piers="false"
+          :loading="aiAnalyzing"
+          @scan="runAiAnalysis"
+          @dismiss="setupCtaDismissed = true"
+        />
       </div>
 
       <!-- Slide-over: inline on desktop, overlay on mobile -->
@@ -2539,13 +2550,6 @@ function rejectSuggestion(idx: number) {
       @toggle-edit="toggleEditMode"
       @run-ai="runAiAnalysis"
       @toggle-legend="showLegend = !showLegend"
-    />
-
-    <!-- Setup wizard CTA when marina has no piers yet -->
-    <MapSetupWizardCta
-      v-if="!aiAnalyzing && drawnPiers.length === 0"
-      :marina-name="mapData?.marina?.name"
-      :has-piers="false"
     />
   </div>
 </template>
