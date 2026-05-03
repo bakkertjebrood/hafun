@@ -45,6 +45,9 @@ const showLegend = ref(false)
 const setupCtaDismissed = ref(false)
 const pierMenuFor = ref<any | null>(null)
 const pierMenuPos = ref<{ x: number, y: number } | null>(null)
+const pierMenuBerthCount = ref(4)
+const pierMenuBerthLength = ref(10)
+const pierMenuBerthBusy = ref(false)
 
 // Facility catalog: type → label, emoji marker glyph, brand color
 interface FacilityDef { label: string, glyph: string, color: string }
@@ -410,6 +413,20 @@ function startDrawPier(name: string) {
   clearVertexHandles()
 }
 
+function nextFreePierName(): string {
+  const used = new Set(drawnPiers.value.map((p: any) => p.name as string))
+  for (let i = 0; i < 26; i++) {
+    const n = String.fromCharCode(65 + i)
+    if (!used.has(n)) return n
+  }
+  return `S${drawnPiers.value.length + 1}`
+}
+
+function quickStartDrawPier() {
+  closePierMenu()
+  startDrawPier(nextFreePierName())
+}
+
 function onMapClick(e: any) {
   // Always dismiss any open pier action menu when tapping somewhere else.
   if (pierMenuFor.value) closePierMenu()
@@ -463,23 +480,28 @@ function undoLastPoint() {
 }
 
 function updateDrawPreview() {
-  // Main line preview
+  // Main line preview — match rendered pier styling (dark halo + solid teal)
   if (drawPolyline) drawPolyline.remove()
   if (drawPoints.value.length >= 2) {
-    drawPolyline = L.polyline(drawPoints.value, {
-      color: '#00A9A5', weight: 5, opacity: 0.9
+    const halo = L.polyline(drawPoints.value, {
+      color: '#0A1520', weight: 8, opacity: 0.35, lineCap: 'round', lineJoin: 'round'
     }).addTo(mapInstance)
+    const main = L.polyline(drawPoints.value, {
+      color: '#00A9A5', weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round'
+    }).addTo(mapInstance)
+    drawPolyline = L.layerGroup([halo, main]).addTo(mapInstance)
   }
 
   // Head line preview
   if (drawHeadPolyline) drawHeadPolyline.remove()
-  if (drawHeadPoints.value.length >= 1) {
-    const pts = drawHeadPoints.value.length >= 2 ? drawHeadPoints.value : [...drawHeadPoints.value]
-    if (pts.length >= 2) {
-      drawHeadPolyline = L.polyline(pts, {
-        color: '#F59E0B', weight: 5, opacity: 0.9
-      }).addTo(mapInstance)
-    }
+  if (drawHeadPoints.value.length >= 2) {
+    const halo = L.polyline(drawHeadPoints.value, {
+      color: '#0A1520', weight: 7, opacity: 0.35, lineCap: 'round', lineJoin: 'round'
+    }).addTo(mapInstance)
+    const main = L.polyline(drawHeadPoints.value, {
+      color: '#F59E0B', weight: 4, opacity: 0.95, lineCap: 'round', lineJoin: 'round'
+    }).addTo(mapInstance)
+    drawHeadPolyline = L.layerGroup([halo, main]).addTo(mapInstance)
   }
 }
 
@@ -515,6 +537,21 @@ async function finishDrawPier() {
     addBerthMarkers()
   } catch (err) {
     console.error('Auto-position after draw failed:', err)
+  }
+
+  // Pop the pier action menu open near the freshly-drawn pier so the user
+  // can immediately add ligplaatsen + assign a function. No sidebar trip needed.
+  const justDrawn = drawnPiers.value.find((p: any) => p.name === pierName)
+  if (justDrawn && mapInstance) {
+    const points = (justDrawn.points as number[][] | null) ?? []
+    if (points.length >= 2) {
+      const m = midOf(points)
+      const px = mapInstance.latLngToContainerPoint(L.latLng(m[0], m[1]))
+      pierMenuBerthCount.value = 4
+      pierMenuBerthLength.value = 10
+      pierMenuFor.value = justDrawn
+      pierMenuPos.value = { x: px.x, y: px.y }
+    }
   }
 }
 
@@ -1442,6 +1479,42 @@ async function togglePierPassanten(pier: any) {
 function closePierMenu() {
   pierMenuFor.value = null
   pierMenuPos.value = null
+}
+
+async function addBerthsFromMenu(pier: any) {
+  if (!marinaId.value || !pier?.name) return
+  const count = Math.max(1, Math.min(200, Math.floor(pierMenuBerthCount.value)))
+  const length = Math.max(2, Math.min(60, pierMenuBerthLength.value))
+  pierMenuBerthBusy.value = true
+  try {
+    // Spread evenly across LEFT and RIGHT so position-berths places them on both sides.
+    const left = Math.ceil(count / 2)
+    const right = count - left
+    if (left > 0) {
+      await $fetch('/api/berths/bulk', {
+        method: 'POST',
+        body: { marinaId: marinaId.value, pier: pier.name, count: left, length, width: 3.5, side: 'LEFT' }
+      })
+    }
+    if (right > 0) {
+      await $fetch('/api/berths/bulk', {
+        method: 'POST',
+        body: { marinaId: marinaId.value, pier: pier.name, count: right, length, width: 3.5, side: 'RIGHT' }
+      })
+    }
+    await $fetch('/api/piers/position-berths', {
+      method: 'POST',
+      body: { marinaId: marinaId.value, pierNames: [pier.name], onlyUnpositioned: true }
+    })
+    await refreshMapData()
+    clearMarkers()
+    addBerthMarkers()
+    closePierMenu()
+  } catch (e: any) {
+    alert(e?.data?.message || 'Toevoegen mislukt')
+  } finally {
+    pierMenuBerthBusy.value = false
+  }
 }
 
 async function assignPierFunction(pier: any, kind: 'PASSANTEN' | 'JAARPLAATS' | 'STALLING' | 'SEIZOEN') {
@@ -2483,6 +2556,19 @@ function rejectSuggestion(idx: number) {
           @dismiss="setupCtaDismissed = true"
         />
 
+        <!-- Edit mode floating "+ Steiger" button -->
+        <button
+          v-if="editMode && drawMode === 'off' && !pierMenuFor && !aiTapMode && !showAiResult && !placingFacilityType"
+          class="absolute z-[1050] bottom-4 left-4 lg:left-6 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-primary-500 text-white text-sm font-semibold shadow-xl hover:bg-primary-600"
+          @click="quickStartDrawPier"
+        >
+          <UIcon
+            name="i-lucide-plus"
+            class="size-4"
+          />
+          Nieuwe steiger
+        </button>
+
         <!-- Pier action menu (tap a pier in edit mode) -->
         <div
           v-if="pierMenuFor && pierMenuPos"
@@ -2510,6 +2596,44 @@ function rejectSuggestion(idx: number) {
                 name="i-lucide-x"
                 class="size-3.5"
               />
+            </button>
+          </div>
+
+          <div
+            v-if="(berthCountByPier[pierMenuFor.name] || 0) === 0"
+            class="bg-[#F4F7F8] rounded-[10px] p-2.5 mb-2.5"
+          >
+            <div class="text-[10px] uppercase tracking-wide text-[#5A6A78] font-semibold mb-1.5">
+              Voeg ligplaatsen toe
+            </div>
+            <div class="flex items-center gap-2 mb-1.5">
+              <label class="flex items-center gap-1 text-[11px] text-[#5A6A78]">
+                Aantal
+                <input
+                  v-model.number="pierMenuBerthCount"
+                  type="number"
+                  min="1"
+                  max="100"
+                  class="w-14 px-2 py-1 rounded-md border border-black/[0.12] bg-white text-sm font-semibold text-[#0A1520]"
+                >
+              </label>
+              <label class="flex items-center gap-1 text-[11px] text-[#5A6A78]">
+                Lengte
+                <input
+                  v-model.number="pierMenuBerthLength"
+                  type="number"
+                  min="4"
+                  max="30"
+                  class="w-12 px-2 py-1 rounded-md border border-black/[0.12] bg-white text-sm font-semibold text-[#0A1520]"
+                ><span class="text-[11px] text-[#5A6A78]">m</span>
+              </label>
+            </div>
+            <button
+              class="w-full py-1.5 rounded-full bg-primary-500 text-white text-[12px] font-semibold disabled:opacity-50"
+              :disabled="pierMenuBerthBusy"
+              @click="addBerthsFromMenu(pierMenuFor)"
+            >
+              {{ pierMenuBerthBusy ? 'Bezig…' : `+ ${pierMenuBerthCount} ligplaatsen` }}
             </button>
           </div>
 
