@@ -11,6 +11,7 @@ const overview = ref<any>(null)
 const berthResults = ref<any[]>([])
 const loading = ref(true)
 const showOverview = ref(true)
+const { loadError, messageFor } = useFetchError()
 
 const contractLabels: Record<string, string> = {
   YEAR: 'Jaarcontract',
@@ -18,12 +19,25 @@ const contractLabels: Record<string, string> = {
   TEMPORARY: 'Tijdelijk'
 }
 
-onMounted(async () => {
-  const discovered = await $fetch('/api/berths/discover') as any
-  marinaId.value = discovered.marinaId
-  await Promise.all([fetchCustomers(), fetchOverview(), fetchBerths()])
+async function load() {
+  loading.value = true
+  loadError.value = ''
+  try {
+    const discovered = await $fetch('/api/berths/discover') as any
+    marinaId.value = discovered.marinaId
+  }
+  catch (e) {
+    loadError.value = messageFor(e, 'Kon haven niet laden')
+    loading.value = false
+    return
+  }
+  const results = await Promise.allSettled([fetchCustomers(), fetchOverview(), fetchBerths()])
+  const failed = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
+  if (failed) loadError.value = messageFor(failed.reason, 'Een deel van de gegevens kon niet geladen worden')
   loading.value = false
-})
+}
+
+onMounted(load)
 
 async function fetchCustomers() {
   customers.value = await $fetch('/api/customers', {
@@ -89,6 +103,12 @@ const filteredGuestsForSearch = computed(() => {
         placeholder="Zoek..."
         class="flex-1 px-4 py-2.5 text-sm rounded-full border border-black/[0.08] bg-white focus:outline-none focus:border-primary-500"
       >
+    </div>
+
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="load()">Opnieuw laden</button>
     </div>
 
     <div v-if="loading" class="text-sm text-[#5A6A78]">Laden...</div>

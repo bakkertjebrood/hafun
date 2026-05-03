@@ -4,16 +4,37 @@ definePageMeta({ layout: false })
 const { user, logout } = useAuthUser()
 const loading = ref(true)
 const data = ref<any>(null)
+const errorState = ref<{ kind: 'no-profile' | 'unauthorized' | 'server' | 'network'; message?: string } | null>(null)
 
-onMounted(async () => {
+async function load() {
+  loading.value = true
+  errorState.value = null
   try {
     data.value = await $fetch('/api/portal/me')
   }
-  catch (e) {
-    console.error(e)
+  catch (e: any) {
+    const status = e?.statusCode || e?.response?.status
+    const message = e?.data?.message || e?.statusMessage
+    if (status === 404) {
+      errorState.value = { kind: 'no-profile' }
+    }
+    else if (status === 401 || status === 403) {
+      errorState.value = { kind: 'unauthorized', message }
+    }
+    else if (status >= 500) {
+      errorState.value = { kind: 'server', message }
+    }
+    else {
+      errorState.value = { kind: 'network', message }
+    }
+    console.error('[portal] load failed:', e)
   }
-  loading.value = false
-})
+  finally {
+    loading.value = false
+  }
+}
+
+onMounted(load)
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(n)
@@ -58,13 +79,39 @@ const outstanding = computed(() => {
     <main class="max-w-[900px] mx-auto px-4 py-6">
       <div v-if="loading" class="text-sm text-[#5A6A78]">Laden...</div>
 
-      <template v-else-if="!data">
+      <template v-else-if="errorState">
         <div class="bg-white border border-black/[0.08] rounded-[14px] p-8 text-center">
-          <div class="text-sm text-[#5A6A78]">Geen klantprofiel gekoppeld. Neem contact op met de havenmeester.</div>
+          <div v-if="errorState.kind === 'no-profile'" class="text-sm text-[#5A6A78]">
+            Geen klantprofiel gekoppeld. Neem contact op met de havenmeester.
+          </div>
+          <template v-else>
+            <div class="text-sm font-semibold text-[#0A1520] mb-1">
+              <span v-if="errorState.kind === 'unauthorized'">Geen toegang</span>
+              <span v-else-if="errorState.kind === 'server'">Er ging iets mis aan onze kant</span>
+              <span v-else>Verbinding mislukt</span>
+            </div>
+            <div class="text-xs text-[#5A6A78] mb-4">
+              {{ errorState.message || 'Probeer het zo opnieuw.' }}
+            </div>
+            <button
+              v-if="errorState.kind !== 'unauthorized'"
+              class="px-4 py-2 rounded-full bg-primary-500 text-white text-sm font-semibold"
+              @click="load"
+            >
+              Opnieuw proberen
+            </button>
+            <button
+              v-else
+              class="px-4 py-2 rounded-full bg-primary-500 text-white text-sm font-semibold"
+              @click="logout"
+            >
+              Opnieuw inloggen
+            </button>
+          </template>
         </div>
       </template>
 
-      <template v-else>
+      <template v-else-if="data">
         <h1 class="text-2xl font-semibold text-[#0A1520] tracking-tight mb-1">Welkom, {{ data.user.firstName || data.customer.name.split(' ')[0] }}</h1>
         <div class="text-sm text-[#5A6A78] mb-6">Uw overzicht bij {{ data.marina.name }}</div>
 

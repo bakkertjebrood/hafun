@@ -48,6 +48,7 @@ const pierMenuPos = ref<{ x: number, y: number } | null>(null)
 const pierMenuBerthCount = ref(4)
 const pierMenuBerthLength = ref(10)
 const pierMenuBerthBusy = ref(false)
+const hasSetupCta = computed(() => !setupCtaDismissed.value && !showAiResult.value && drawnPiers.value.length === 0)
 
 // Facility catalog: type → label, emoji marker glyph, brand color
 interface FacilityDef { label: string, glyph: string, color: string }
@@ -1970,7 +1971,8 @@ function rejectSuggestion(idx: number) {
     <!-- Legenda-paneel -->
     <div
       v-if="showLegend"
-      class="absolute z-[500] top-20 right-4 bg-white/95 backdrop-blur-sm border border-black/[0.08] rounded-[12px] shadow-lg p-3 w-[200px]"
+      class="absolute z-[500] right-4 lg:top-20 bg-white/95 backdrop-blur-sm border border-black/[0.08] rounded-[12px] shadow-lg p-3 w-[200px]"
+      :class="hasSetupCta ? 'top-44' : 'top-20'"
     >
       <div class="flex items-center justify-between mb-2">
         <div class="text-[11px] uppercase tracking-widest text-[#5A6A78] font-semibold">
@@ -2537,7 +2539,7 @@ function rejectSuggestion(idx: number) {
 
         <!-- Mobile panel toggle -->
         <button
-          class="lg:hidden absolute top-3 left-3 z-[1001] w-10 h-10 bg-white/95 backdrop-blur-sm rounded-full border border-black/[0.08] shadow-lg flex items-center justify-center"
+          class="lg:hidden absolute top-3 left-3 z-[800] w-10 h-10 bg-white/95 backdrop-blur-sm rounded-full border border-black/[0.08] shadow-lg flex items-center justify-center"
           @click="showPanel = !showPanel"
         >
           <UIcon

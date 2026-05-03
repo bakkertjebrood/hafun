@@ -3,11 +3,23 @@ definePageMeta({ layout: 'dashboard' })
 
 const loading = ref(true)
 const data = ref<any>({ notes: [], overdueInvoices: [], todayBookings: 0 })
+const { loadError, messageFor } = useFetchError()
 
-onMounted(async () => {
-  data.value = await $fetch('/api/notifications')
-  loading.value = false
-})
+async function load() {
+  loading.value = true
+  loadError.value = ''
+  try {
+    data.value = await $fetch('/api/notifications')
+  }
+  catch (e) {
+    loadError.value = messageFor(e, 'Kon meldingen niet laden')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+onMounted(load)
 
 function formatDateTime(d: string) {
   return new Date(d).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -38,6 +50,12 @@ function timeAgo(d: string) {
 <template>
   <div class="p-4 lg:p-7 max-w-[900px]">
     <h1 class="text-xl lg:text-2xl font-semibold text-[#0A1520] tracking-tight mb-5">Meldingen</h1>
+
+    <div v-if="loadError" class="mb-4 px-4 py-3 rounded-[10px] bg-red-50 border border-red-200 flex items-start gap-3">
+      <UIcon name="i-lucide-alert-triangle" class="size-4 text-red-600 mt-0.5 shrink-0" />
+      <div class="flex-1 text-sm text-red-700">{{ loadError }}</div>
+      <button class="text-xs text-red-700 font-semibold underline" @click="load()">Opnieuw laden</button>
+    </div>
 
     <div v-if="loading" class="text-sm text-[#5A6A78]">Laden...</div>
 
